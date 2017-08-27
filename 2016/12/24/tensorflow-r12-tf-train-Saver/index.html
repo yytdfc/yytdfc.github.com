@@ -1,0 +1,50 @@
+<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="X-UA-Compatible" content="IE=edge"><title> New checkpoint format in TensorFlow R12 · Votec</title><meta name="description" content="New checkpoint format in TensorFlow R12 - ChenFu"><meta name="viewport" content="width=device-width, initial-scale=1"><link rel="icon" href="/images/favicon.png"><link rel="stylesheet" href="/css/apollo.css"><link rel="search" type="application/opensearchdescription+xml" href="http://votec.top/atom.xml" title="Votec"></head><body><div class="wrap"><header><a href="/" class="logo-link"><img src="/images/logo.png" alt="logo"></a><ul class="nav nav-list"><li class="nav-list-item"><a href="/" target="_self" class="nav-list-link">BLOG</a></li><li class="nav-list-item"><a href="/archives/" target="_self" class="nav-list-link">ARCHIVE</a></li><li class="nav-list-item"><a href="/tags/" target="_self" class="nav-list-link">TAGS</a></li><li class="nav-list-item"><a href="https://github.com/yytdfc" target="_blank" class="nav-list-link">GITHUB</a></li><li class="nav-list-item"><a href="/about/" target="_self" class="nav-list-link">ABOUT</a></li></ul></header><main class="container"><div class="post"><article class="post-block"><h1 class="post-title">New checkpoint format in TensorFlow R12</h1><div class="post-info">Dec 24, 2016<full_date item.date ll>&#8853 <span id="busuanzi_container_page_pv">Viewed<span id="busuanzi_value_page_pv"></span> times</span></full_date></div><div class="post-content"><p>Suddenly, when restore checkpoint save by the TensorFlow R12 with old version, some errors occurs:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">ValueError: Restore called with invalid save path</div></pre></td></tr></table></figure>
+<a id="more"></a>
+<p>According to the <a href="https://github.com/tensorflow/tensorflow/releases" target="_blank" rel="external"><strong>TensorFlow v0.12.0 RC0’s release note</strong></a>:</p>
+<blockquote>
+<p>New checkpoint format becomes the default in tf.train.Saver. Old V1 checkpoints continue to be readable; controlled by the write_version argument, tf.train.Saver now by default writes out in the new V2 format. It significantly reduces the peak memory required and latency incurred during restore.</p>
+</blockquote>
+<p>The <code>tf.train.Saver</code> has a new checkpoint format with <code>write_version</code> flag <strong>V2</strong>, and old format with <strong>V1</strong>. For example:</p>
+<table>
+<thead>
+<tr>
+<th>old format (V1)</th>
+<th>new format (V2)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>model.ckpt-12345</td>
+<td>model.ckpt-12345.index</td>
+</tr>
+<tr>
+<td>model.ckpt-12345.meta</td>
+<td>model.ckpt-12345.meta</td>
+</tr>
+<tr>
+<td></td>
+<td>model.ckpt-12345.data-00000-of-00001</td>
+</tr>
+</tbody>
+</table>
+<p>What if we want to use the old trained checkpoint? So I look into the source file of <a href="https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/training/saver.py" target="_blank" rel="external">saver.py</a>, and find out the init function of the <code>tf.train.saver</code> is:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line"><span class="function"><span class="keyword">def</span> <span class="title">__init__</span><span class="params">(self, write_version=saver_pb2.SaverDef.V2)</span>:</span></div><div class="line">  self._write_version = write_version</div></pre></td></tr></table></figure>
+<p>We can easily save trained checkpoint in the old way like this:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div></pre></td><td class="code"><pre><div class="line"><span class="keyword">import</span> tensorflow <span class="keyword">as</span> tf</div><div class="line"><span class="keyword">from</span> tensorflow.core.protobuf <span class="keyword">import</span> saver_pb2</div><div class="line">...</div><div class="line">saver = tf.train.Saver(write_version = saver_pb2.SaverDef.V1)</div><div class="line">saver.save(sess, <span class="string">'./model.ckpt'</span>, global_step = step)</div></pre></td></tr></table></figure>
+<p>However, we will get lots of <strong>WARNING …</strong> :</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div></pre></td><td class="code"><pre><div class="line">WARNING:tensorflow:*******************************************************</div><div class="line">WARNING:tensorflow:TensorFlow&apos;s V1 checkpoint format has been deprecated.</div><div class="line">WARNING:tensorflow:Consider switching to the more efficient V2 format:</div><div class="line">WARNING:tensorflow: `tf.train.Saver(write_version=tf.train.SaverDef.V2)`</div><div class="line">WARNING:tensorflow:now on by default.</div><div class="line">WARNING:tensorflow:*******************************************************</div></pre></td></tr></table></figure>
+<p>So, once we migrate our tf code to R12, we’d better use the new checkpoint format for better performance.</p>
+</div></article></div></main><footer><div class="paginator"><a href="/2016/12/24/tensorflow-r12-tf-train-Saver-chs/" class="prev">Prev</a><a href="/2016/12/05/python-julia/" class="next">Next</a></div><div id="cloud-tie-wrapper" class="cloud-tie-wrapper"></div><script src="https://img1.cache.netease.com/f2e/tie/yun/sdk/loader.js"></script><script>var cloudTieConfig = {url: document.location.href,sourceId: "2016/12/24/tensorflow-r12-tf-train-Saver/",productKey: "b710aea8146b4b82be4291d960552145",target: "cloud-tie-wrapper"};
+var yunManualLoad = true;
+Tie.loader("aHR0cHM6Ly9hcGkuZ2VudGllLjE2My5jb20vcGMvbGl2ZXNjcmlwdC5odG1s", true);</script><div class="copyright"><p>© 2016~2017 <a href="http://votec.top">ChenFu</a>  &#8225  Site viewed <span id="busuanzi_value_site_pv"></span> times.</span></p><p>Powered by <a href="https://hexo.io/" target="_blank">Hexo</a> + <a href="https://github.com/yytdfc/hexo-theme-apollo-plus" target="_blank">apollo</a> <script async src="//dn-lbstatics.qbox.me/busuanzi/2.3/busuanzi.pure.mini.js"></script><span id="busuanzi_container_site_pv"></p></div></footer></div><script type="text/x-mathjax-config">MathJax.Hub.Config({tex2jax: {inlineMath: [['$','$'], ['\\(','\\)']]}});</script><script async src="https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.1/MathJax.js?config=TeX-AMS_CHTML" type="text/javascript"></script><script>(function(i,s,o,g,r,a,m){i['GoogleAnalyticsObject']=r;i[r]=i[r]||function(){
+(i[r].q=i[r].q||[]).push(arguments)},i[r].l=1*new Date();a=s.createElement(o),
+m=s.getElementsByTagName(o)[0];a.async=1;a.src=g;m.parentNode.insertBefore(a,m)
+})(window,document,'script','https://www.google-analytics.com/analytics.js','ga');
+ga('create', 'UA-100648993-1','auto');ga('send','pageview');</script><script>var _hmt = _hmt || [];
+(function() {
+var hm = document.createElement("script");
+hm.src = "https://hm.baidu.com/hm.js?3a1457089b82f026e9a39fbe773531ff";
+var s = document.getElementsByTagName("script")[0];
+s.parentNode.insertBefore(hm, s);
+})();</script><script type="text/javascript" src="http://tajs.qq.com/stats?sId=59104549" charset="UTF-8"></script></body></html>

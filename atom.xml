@@ -1,0 +1,979 @@
+<?xml version="1.0" encoding="utf-8"?>
+<feed xmlns="http://www.w3.org/2005/Atom">
+  <title>Votec</title>
+  
+  <link href="/atom.xml" rel="self"/>
+  
+  <link href="http://votec.top/"/>
+  <updated>2017-08-27T11:53:35.000Z</updated>
+  <id>http://votec.top/</id>
+  
+  <author>
+    <name>ChenFu</name>
+    
+  </author>
+  
+  <generator uri="http://hexo.io/">Hexo</generator>
+  
+  <entry>
+    <title>AlphaGo - Searching with Policy and Value Networks</title>
+    <link href="http://votec.top/2017/05/24/alphago-mcts/"/>
+    <id>http://votec.top/2017/05/24/alphago-mcts/</id>
+    <published>2017-05-24T10:37:03.000Z</published>
+    <updated>2017-08-27T11:53:35.000Z</updated>
+    
+    <content type="html"><![CDATA[<blockquote>
+<p>本文是根据<em>AlphaGo</em>论文:<br>D. Silver, A. Huang, C. Maddison, A. Guez, L. Sifre, G. van den Driessche, J. Schrittwieser, I. Antonoglou, V. Panneershelvam, M. Lanctot, S. Dieleman, D. Grewe, J. Nham, N. Kalchbrenner, I. Sutskever, T. Lillicrap, M. Leach, K. Kavukcuoglu, T. Graepel, D. Hassabis. <a href="http://www.nature.com/nature/journal/v529/n7587/full/nature16961.html" target="_blank" rel="external"><em>Mastering the Game of Go with Deep Neural Networks and Tree Search.</em></a> Nature 2016.<br>制作的一次<em>AlphaGo</em>算法培训的第二部分, 关于<em>AlphaGo</em>如果使用policy network和value network进行异步MCTS搜索, 对应的论文中的<em>4. Searching with Policy and Value Networks</em>.<br>欢迎提出宝贵意见.</p>
+</blockquote>
+<a id="more"></a>
+<!-- $theme: default -->
+<!-- $size: 16:9 -->
+<hr>
+<!-- page_number: true -->
+<!-- footer: AlphaGo - Searching with Policy and Value Networks - ChenFu-->
+<h2 id="AlphaGo-Overview"><a href="#AlphaGo-Overview" class="headerlink" title="AlphaGo Overview"></a><em><strong>AlphaGo Overview</strong></em></h2><ol>
+<li>Supervised Learning of Policy Networks</li>
+<li>Reinforcement Learning of Policy Networks</li>
+<li>Reinforcement Learning of Value Networks</li>
+<li><em><strong>Searching with Policy and Value Networks</strong></em></li>
+</ol>
+<hr>
+<h2 id="Contents"><a href="#Contents" class="headerlink" title="Contents"></a><em><strong>Contents</strong></em></h2><ul>
+<li>什么是 MCTS</li>
+<li><em>AlphaGo</em> 中使用的 MCTS</li>
+<li>APV-MCTS 实现细节</li>
+</ul>
+<hr>
+<h2 id="MCTS-Monte-Carlo-Tree-Search"><a href="#MCTS-Monte-Carlo-Tree-Search" class="headerlink" title="MCTS (Monte-Carlo Tree Search)"></a>MCTS (Monte-Carlo Tree Search)</h2><ul>
+<li>MCTS (Monte-Carlo Tree Search) 是一种用于某些决策过程的启发式搜索算法。</li>
+<li>Rémi Coulom (Crazy Stone作者) 首先描述了蒙特卡洛方法在游戏树搜索的应用并命名为蒙特卡洛树搜索。</li>
+<li><em>AlphaGo</em>出现前所有的顶尖围棋AI均采用 MCTS 方法。</li>
+</ul>
+<hr>
+<h2 id="一般的树搜索"><a href="#一般的树搜索" class="headerlink" title="一般的树搜索"></a>一般的树搜索</h2><p><img src="/images/alphago/tree.webp" alt="logo center 60%"></p>
+<ul>
+<li>需要搜索的状态多，耗费计算量大</li>
+</ul>
+<hr>
+<h2 id="MCTS"><a href="#MCTS" class="headerlink" title="MCTS"></a>MCTS</h2><p><img src="/images/alphago/mcts.webp" alt="logo center 60%"></p>
+<ul>
+<li>MCTS通过大量的随机模拟未来可能的棋局，不断逼近真实结果</li>
+</ul>
+<hr>
+<h2 id="MCTS的四个步骤："><a href="#MCTS的四个步骤：" class="headerlink" title="MCTS的四个步骤："></a>MCTS的四个步骤：</h2><p><img src="/images/alphago/pure_mcts.webp" alt="logo center 100%"></p>
+<hr>
+<h2 id="AlphaGo中的MCTS"><a href="#AlphaGo中的MCTS" class="headerlink" title="AlphaGo中的MCTS"></a><em>AlphaGo</em>中的MCTS</h2><p><em>AlphaGo</em> 采用了 APV-MCTS (Asynchronous Policy and Value MCTS) 的方法：</p>
+<ul>
+<li>Asynchronous 异步搜索: CPU进行搜索和 $p<em>\pi$ 计算，GPU进行 $p</em>\sigma$ 和 $p_\theta$ 计算</li>
+<li>Policy network: 给出下一步棋的可能的概率分布，减少搜索宽度</li>
+<li>Value network: 给出某个搜索局面的评分，减少搜索深度</li>
+</ul>
+<hr>
+<h2 id="使用Policy-network减小搜索宽度"><a href="#使用Policy-network减小搜索宽度" class="headerlink" title="使用Policy network减小搜索宽度"></a>使用Policy network减小搜索宽度</h2><p><img src="/images/alphago/policy.webp" alt="logo center 65%"></p>
+<ul>
+<li>更加有效的扩展树的分支，减少树的宽度</li>
+</ul>
+<hr>
+<h2 id="使用Value-network减小搜索深度"><a href="#使用Value-network减小搜索深度" class="headerlink" title="使用Value network减小搜索深度"></a>使用Value network减小搜索深度</h2><p><img src="/images/alphago/value.webp" alt="logo center 62%"></p>
+<ul>
+<li>给出某个搜索局面的评分，在较少搜索树深度时得到更准确的局面评估</li>
+</ul>
+<hr>
+<h2 id="APV-MCTS-的具体实现"><a href="#APV-MCTS-的具体实现" class="headerlink" title="APV-MCTS 的具体实现"></a>APV-MCTS 的具体实现</h2><p>&#160;　　　　 选择　　　　　　 扩展　　　　　　　　 评估　　　　　　 　　　 　回溯<br><img src="/images/alphago/3.webp" alt="logo center"></p>
+<hr>
+<h2 id="Step-1-Selection-选择"><a href="#Step-1-Selection-选择" class="headerlink" title="Step 1. Selection 选择"></a>Step 1. Selection 选择</h2><p>从根节点开始，根据$a<em>t=\arg\max\limits</em>{a}(Q(s_t,a)+u(s_t,a))$选择下一步走法，直到到达叶节点</p>
+<ul>
+<li><p>$Q(s,a)=(1-\lambda)\frac{W_v(s,a)}{N_v(s,a)}+\lambda\frac{W_r(s,a)}{N_r(s,a)}$　　　　$(\lambda=0.5)$<br>&#160;　　　　　　　　value评分　rollout评分</p>
+</li>
+<li><p>$u(s,a)=c_{puct}P(s,a)\frac{\sqrt{\sum_bN_r(s,b)}}{1+N<em>r(s,b)}$　　　　$(c</em>{puct}=5)$<br>&#160;　　　　　　　 policy　　UCT</p>
+</li>
+</ul>
+<hr>
+<h2 id="Step-2-Expansion-扩展"><a href="#Step-2-Expansion-扩展" class="headerlink" title="Step 2. Expansion 扩展"></a>Step 2. Expansion 扩展</h2><p>当一个叶节点的访问次数使用$N<em>r(s,a)\gt n</em>{thr}$时，扩展该叶节点。$(n_{thr}=40)$</p>
+<ul>
+<li>首先在CPU上用tree policy $p_\tau(a|s’)$临时扩展下一步走法的概率分布</li>
+<li><p>同时在GPU上计算SL policy $p<em>\sigma(a|s’)$，计算完成时替换$p</em>\tau$的结果</p>
+</li>
+<li><p>$P(s’,a)\leftarrow p_\sigma^\beta(a|s’)$<br>$(\beta$为softmax temperature, 使概率分布更加光滑, $\beta=0.67)$</p>
+</li>
+</ul>
+<hr>
+<h2 id="Step-3-Evaluation-评估"><a href="#Step-3-Evaluation-评估" class="headerlink" title="Step 3. Evaluation 评估"></a>Step 3. Evaluation 评估</h2><p>当选择到一个叶节点时，对当前的局面进行评估</p>
+<ul>
+<li>Value network 打分得到$v_\theta\in(-1,1)$ <em>(on GPU)</em></li>
+<li>Rollout policy 模拟走子$a<em>t\sim p</em>\pi$到局终，结果$z_t\in{-1,0,1}$ <em>(on CPU)</em></li>
+</ul>
+<hr>
+<h2 id="Step-4-Backup-回溯"><a href="#Step-4-Backup-回溯" class="headerlink" title="Step 4. Backup 回溯"></a>Step 4. Backup 回溯</h2><p>从该叶节点开始，向根节点回溯，迭代更新父节点评分值：</p>
+<ul>
+<li>$N_v(s,a)\leftarrow N_v(s,a)+1$, $W_v(s,a)\leftarrow W<em>v(s,a)+v</em>\theta$</li>
+<li>$N_r(s,a)\leftarrow N_r(s,a)+1$, $W_r(s,a)\leftarrow W_r(s,a)+z_t$</li>
+</ul>
+<ul>
+<li>$Q(s,a)=(1-\lambda)\frac{W_v(s,a)}{N_v(s,a)}+\lambda\frac{W_r(s,a)}{N_r(s,a)}$　　　　$(\lambda=0.5)$<br>&#160;　　　　　　　　value评分　rollout评分</li>
+</ul>
+<hr>
+<h2 id="Step-5-End-结束"><a href="#Step-5-End-结束" class="headerlink" title="Step 5. End 结束"></a>Step 5. End 结束</h2><p>循环以上过程直至达到最大搜索次数或者设定时间，选择根节点下访问次数最多的走法。</p>
+<p>若 $\max\limits_aQ(s,a)&lt;-0.8$，<em>AlphaGo</em>认输。</p>
+<hr>
+<h2 id="Results"><a href="#Results" class="headerlink" title="Results"></a>Results</h2><table>
+<thead>
+<tr>
+<th>Short name</th>
+<th style="text-align:left">Policy network</th>
+<th>Value network</th>
+<th>Rollouts</th>
+<th>Mixing constant</th>
+<th>Policy GPUs</th>
+<th>Value GPUs</th>
+<th>Elo rating</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>$\alpha_{rvp}$</td>
+<td style="text-align:left">$P_\sigma$</td>
+<td>$v_\theta$</td>
+<td>$P_\pi$</td>
+<td>$\lambda=0.5$</td>
+<td>2</td>
+<td>6</td>
+<td>2890</td>
+</tr>
+<tr>
+<td>$\alpha_{vp}$</td>
+<td style="text-align:left">$P_\sigma$</td>
+<td>$v_\theta$</td>
+<td>-</td>
+<td>$\lambda=0$</td>
+<td>2</td>
+<td>6</td>
+<td>2177</td>
+</tr>
+<tr>
+<td>$\alpha_{rp}$</td>
+<td style="text-align:left">$P_\sigma$</td>
+<td>-</td>
+<td>$P_\pi$</td>
+<td>$\lambda=1$</td>
+<td>8</td>
+<td>0</td>
+<td>2416</td>
+</tr>
+<tr>
+<td>$\alpha_{rv}$</td>
+<td style="text-align:left">[$P_\tau$]</td>
+<td>$v_\theta$</td>
+<td>$P_\pi$</td>
+<td>$\lambda=0.5$</td>
+<td>0</td>
+<td>8</td>
+<td>2077</td>
+</tr>
+<tr>
+<td>$\alpha_{v}$</td>
+<td style="text-align:left">[$P_\tau$]</td>
+<td>$v_\theta$</td>
+<td>-</td>
+<td>$\lambda=0$</td>
+<td>0</td>
+<td>8</td>
+<td>1655</td>
+</tr>
+<tr>
+<td>$\alpha_{r}$</td>
+<td style="text-align:left">[$P_\tau$]</td>
+<td>-</td>
+<td>$P_\pi$</td>
+<td>$\lambda=1$</td>
+<td>0</td>
+<td>0</td>
+<td>1457</td>
+</tr>
+<tr>
+<td>$\alpha_{p}$</td>
+<td style="text-align:left">$P_\sigma$</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+<td>0</td>
+<td>0</td>
+<td>1517</td>
+</tr>
+</tbody>
+</table>
+<hr>
+<h2 id="Elo-ratings-Nature-AlphaGo"><a href="#Elo-ratings-Nature-AlphaGo" class="headerlink" title="Elo ratings (Nature AlphaGo)"></a>Elo ratings (<em>Nature AlphaGo</em>)</h2><p><img src="/images/alphago/elo_nature.webp" alt="logo center 100%"></p>
+<hr>
+<h2 id="Elo-ratings-Seoul-AlphaGo"><a href="#Elo-ratings-Seoul-AlphaGo" class="headerlink" title="Elo ratings (Seoul AlphaGo)"></a>Elo ratings (<em>Seoul AlphaGo</em>)</h2><p><img src="/images/alphago/elo.webp" alt="logo center 63%"></p>
+<hr>
+<h2 id="AlphaGo-vs-Lee-Sedol-Game-1"><a href="#AlphaGo-vs-Lee-Sedol-Game-1" class="headerlink" title="AlphaGo vs Lee Sedol: Game 1"></a><em>AlphaGo</em> vs <em>Lee Sedol</em>: Game 1</h2><p><img src="/images/alphago/game1.webp" alt="logo center 63%"></p>
+<hr>
+<h2 id="AlphaGo-vs-Lee-Sedol-Game-2"><a href="#AlphaGo-vs-Lee-Sedol-Game-2" class="headerlink" title="AlphaGo vs Lee Sedol: Game 2"></a><em>AlphaGo</em> vs <em>Lee Sedol</em>: Game 2</h2><p><img src="/images/alphago/game2.webp" alt="logo center 63%"></p>
+<hr>
+<h2 id="AlphaGo-vs-Lee-Sedol-Game-3"><a href="#AlphaGo-vs-Lee-Sedol-Game-3" class="headerlink" title="AlphaGo vs Lee Sedol: Game 3"></a><em>AlphaGo</em> vs <em>Lee Sedol</em>: Game 3</h2><p><img src="/images/alphago/game3.webp" alt="logo center 63%"></p>
+<hr>
+<h2 id="AlphaGo-vs-Lee-Sedol-Game-4"><a href="#AlphaGo-vs-Lee-Sedol-Game-4" class="headerlink" title="AlphaGo vs Lee Sedol: Game 4"></a><em>AlphaGo</em> vs <em>Lee Sedol</em>: Game 4</h2><p><img src="/images/alphago/game4.webp" alt="logo center 63%"></p>
+<hr>
+<h2 id="AlphaGo-vs-Lee-Sedol-Game-5"><a href="#AlphaGo-vs-Lee-Sedol-Game-5" class="headerlink" title="AlphaGo vs Lee Sedol: Game 5"></a><em>AlphaGo</em> vs <em>Lee Sedol</em>: Game 5</h2><p><img src="/images/alphago/game5.webp" alt="logo center 63%"></p>
+<hr>
+<!-- page_number: false -->
+<!-- footer:   -->
+<h2 id="Thanks"><a href="#Thanks" class="headerlink" title="Thanks"></a><center>Thanks</center></h2>]]></content>
+    
+    <summary type="html">
+    
+      &lt;blockquote&gt;
+&lt;p&gt;本文是根据&lt;em&gt;AlphaGo&lt;/em&gt;论文:&lt;br&gt;D. Silver, A. Huang, C. Maddison, A. Guez, L. Sifre, G. van den Driessche, J. Schrittwieser, I. Antonoglou, V. Panneershelvam, M. Lanctot, S. Dieleman, D. Grewe, J. Nham, N. Kalchbrenner, I. Sutskever, T. Lillicrap, M. Leach, K. Kavukcuoglu, T. Graepel, D. Hassabis. &lt;a href=&quot;http://www.nature.com/nature/journal/v529/n7587/full/nature16961.html&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;&lt;em&gt;Mastering the Game of Go with Deep Neural Networks and Tree Search.&lt;/em&gt;&lt;/a&gt; Nature 2016.&lt;br&gt;制作的一次&lt;em&gt;AlphaGo&lt;/em&gt;算法培训的第二部分, 关于&lt;em&gt;AlphaGo&lt;/em&gt;如果使用policy network和value network进行异步MCTS搜索, 对应的论文中的&lt;em&gt;4. Searching with Policy and Value Networks&lt;/em&gt;.&lt;br&gt;欢迎提出宝贵意见.&lt;/p&gt;
+&lt;/blockquote&gt;
+    
+    </summary>
+    
+    
+      <category term="RL" scheme="http://votec.top/tags/RL/"/>
+    
+      <category term="DL" scheme="http://votec.top/tags/DL/"/>
+    
+      <category term="AlphaGo" scheme="http://votec.top/tags/AlphaGo/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>macOS系统重装工程</title>
+    <link href="http://votec.top/2017/01/31/macOS-reinstall/"/>
+    <id>http://votec.top/2017/01/31/macOS-reinstall/</id>
+    <published>2017-01-30T16:02:00.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="前记"><a href="#前记" class="headerlink" title="前记"></a>前记</h2><p>前两天一个逗比的想法突然砸中我的脑袋，我用Mac也一年了，但是之前用的好像不是那么完美，于是强迫症又犯了，于是我做了一个作大死的决定：<strong>重装系统！</strong>。</p>
+<a id="more"></a>
+<blockquote>
+<p>每一个问题都有原因，也都有答案。</p>
+</blockquote>
+<p>于是乎我开始了重装系统，首先很快Google到了Apple官方的<a href="https://support.apple.com/zh-cn/HT204904" target="_blank" rel="external">重装macOS方法</a><strong>(友情提示：慎重采用！慎重采用！慎重采用！)</strong>：</p>
+<blockquote>
+<ol>
+<li><p>将 Mac 开机或重新启动后，立即按住 Option-Command (⌘)-R 以从互联网恢复功能启动。看到 Apple 标志时松开这两个键。看到“实用工具”窗口时，启动即完成。</p>
+</li>
+<li><p>从“实用工具”窗口中打开“磁盘工具”，然后使用“磁盘工具”抹掉您的内建硬盘（使用“Mac OS 扩展（日志式）”格式）。完成后，退出“磁盘工具”。</p>
+</li>
+<li><p>在“实用工具”窗口中，选取“重新安装 macOS”（或“重新安装 OS X”）， 然后按照屏幕上的说明进行操作。<br>此操作将安装您的 Mac 最初随附的系统。它未与您的 Apple ID 关联，因此，新所有者可以使用其 Apple ID 通过 App Store 升级到更高版本。</p>
+</li>
+<li><p>完成后，您的 Mac 会重新启动并进入设置助理。按下“Command-Q”，然后点按“关机”。新所有者便可以使用自己的信息完成设置助理的各个步骤。</p>
+</li>
+</ol>
+</blockquote>
+<p>看起来一切都是那么的人性化和美好，于是我简单备份了home文件夹后，愉快的开始了作大死之旅。</p>
+<h2 id="macOS到底该如何重新安装"><a href="#macOS到底该如何重新安装" class="headerlink" title="macOS到底该如何重新安装"></a>macOS到底该如何重新安装</h2><p>按照上述做法，从互联网重新安装系统，这里有两大bug，一是安装的是<em>Mac最初随附的系统</em>，安装好以后还要更新；第二也是最致命的，从互联网安装新系统压根下载不下来啊，看着这感人的进度条，明明过了一天一夜，也不过进行约五分之一不到，剩余时间11个小时也从来没有变过。</p>
+<p>那么，随之而来的一个问题：<strong>我们到底该如何重装macOS呢？</strong> 经过我的一番研究倒腾之后，最优方案如下（以macOS Sierra 10.12为例）：</p>
+<ol>
+<li><p>首先获取一个系统的安装文件，如果macOS 10.9以上的版本，一般是获得一个Application的格式，具体获得方法参考<a href="https://support.apple.com/zh-cn/HT201475" target="_blank" rel="external">官方文档</a>。但是如果你现在手头没有Mac或者担心下载速度太慢，那么还是百度找一个下载链接吧。</p>
+</li>
+<li><p>挂载应用<code>macOS Sierra 10.12.dmg</code>文件:</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">hdiutil attach macOS\ Sierra\ 10.12.dmg</div></pre></td></tr></table></figure>
+</li>
+<li><p>。。。</p>
+</li>
+</ol>
+<h3 id="系统设置"><a href="#系统设置" class="headerlink" title="系统设置"></a>系统设置</h3><p>设置显示隐藏文件：<br><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">defaults write com.apple.finder AppleShowAllFiles -boolean <span class="literal">true</span> ; killall Finder</div></pre></td></tr></table></figure></p>
+<p>dock隐藏显示时间：<br><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">defaults write com.apple.Dock autohide-delay -<span class="built_in">float</span> 0 &amp;&amp; killall dock</div></pre></td></tr></table></figure></p>
+<h3 id="Brew包管理"><a href="#Brew包管理" class="headerlink" title="Brew包管理"></a>Brew包管理</h3><p>安装<a href="http://brew.sh" target="_blank" rel="external">Brew</a><br><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">/usr/bin/ruby -e <span class="string">"<span class="variable">$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)</span>"</span></div></pre></td></tr></table></figure></p>
+<p>中途会提示安装XCode Command Tools，安装。</p>
+<h3 id="安装zsh"><a href="#安装zsh" class="headerlink" title="安装zsh"></a>安装zsh</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div></pre></td><td class="code"><pre><div class="line"><span class="comment"># 安装zsh</span></div><div class="line">brew install zsh</div><div class="line"><span class="comment"># 安装Oh—my-zsh</span></div><div class="line">sh -c <span class="string">"<span class="variable">$(curl -fsSL https://raw.github.com/robbyrussell/oh-my-zsh/master/tools/install.sh)</span>"</span></div></pre></td></tr></table></figure>
+<p>然后会看到这个就说明装好了：<br><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div></pre></td><td class="code"><pre><div class="line">         __                                     __</div><div class="line">  ____  / /_     ____ ___  __  __   ____  _____/ /_</div><div class="line"> / __ \/ __ \   / __ `__ \/ / / /  /_  / / ___/ __ \</div><div class="line">/ /_/ / / / /  / / / / / / /_/ /    / /_(__  ) / / /</div><div class="line">\____/_/ /_/  /_/ /_/ /_/\__, /    /___/____/_/ /_/</div><div class="line">                        /____/                       ....is now installed!</div></pre></td></tr></table></figure></p>
+<p>然后对robbyrussell主题做简单更改，编辑<code>.oh-my-zsh/themes/robbyrussell.zsh-theme</code>:</p>
+<p>改为：<br><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">PROMPT=<span class="string">'$&#123;ret_status&#125;%&#123;$fg_bold[green]%&#125;%p %&#123;$fg[cyan]%&#125;%c %&#123;$fg_bold[blue]%&#125;$(git_prompt_info)%&#123;$fg_bold[blue]%&#125; %&#123;$fg_bold[white]%&#125;&gt; %&#123;$reset_color%&#125;'</span></div></pre></td></tr></table></figure></p>
+<h3 id="安装vim"><a href="#安装vim" class="headerlink" title="安装vim"></a>安装vim</h3><h4 id="安装MacVim"><a href="#安装MacVim" class="headerlink" title="安装MacVim"></a>安装MacVim</h4><p>打开<code>MacVim.dmg</code>，拖动MacVim到Application，<code>cp mvim /usr/local/bin/</code></p>
+<h4 id="配置vim文件"><a href="#配置vim文件" class="headerlink" title="配置vim文件"></a>配置vim文件</h4><p>安装k-vim配置文件<br><figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">git clone https://github.com/wklken/k-vim.git</div><div class="line">./install.sh</div></pre></td></tr></table></figure></p>
+<h3 id="安装Atom"><a href="#安装Atom" class="headerlink" title="安装Atom"></a>安装Atom</h3><p>Atom的<a href="https://github.com/atom/atom/releases/tag/v1.13.1" target="_blank" rel="external">官方release地址</a></p>
+<h3 id="安装Python"><a href="#安装Python" class="headerlink" title="安装Python"></a>安装Python</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">brew install python3</div><div class="line">pip3 install jupyter numpy matplotlib scipy pandas  cython</div></pre></td></tr></table></figure>
+<h4 id="安装quandl"><a href="#安装quandl" class="headerlink" title="安装quandl"></a>安装quandl</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pip3 install quandl statsmodels</div></pre></td></tr></table></figure>
+<h4 id="安装spyder"><a href="#安装spyder" class="headerlink" title="安装spyder"></a>安装spyder</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pip3 install spyder PyQt5</div></pre></td></tr></table></figure>
+<h4 id="安装二维码相关"><a href="#安装二维码相关" class="headerlink" title="安装二维码相关"></a>安装二维码相关</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">brew install zbar</div><div class="line">pip3 install qrcode zbarlight</div></pre></td></tr></table></figure>
+<h4 id="安装机器学习相关"><a href="#安装机器学习相关" class="headerlink" title="安装机器学习相关"></a>安装机器学习相关</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pip3 install scikit-learn</div></pre></td></tr></table></figure>
+<h4 id="安装TensorFlow"><a href="#安装TensorFlow" class="headerlink" title="安装TensorFlow"></a>安装TensorFlow</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pip3 install tensorflow</div></pre></td></tr></table></figure>
+<h4 id="安装-Lua-Torch-iTorch"><a href="#安装-Lua-Torch-iTorch" class="headerlink" title="安装 Lua Torch iTorch"></a>安装 <a href="http://www.lua.org/download.html" target="_blank" rel="external">Lua</a> <a href="http://torch.ch/docs/getting-started.html" target="_blank" rel="external">Torch</a> <a href="https://github.com/facebook/iTorch" target="_blank" rel="external">iTorch</a></h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div><div class="line">10</div><div class="line">11</div><div class="line">12</div><div class="line">13</div><div class="line">14</div><div class="line">15</div><div class="line">16</div><div class="line">17</div><div class="line">18</div></pre></td><td class="code"><pre><div class="line"><span class="comment"># install Torch</span></div><div class="line">git <span class="built_in">clone</span> https://github.com/torch/distro.git torch --recursive</div><div class="line"><span class="built_in">cd</span> torch; bash install-deps;</div><div class="line">./install.sh</div><div class="line"><span class="comment"># install iTorch</span></div><div class="line">brew install zeromq</div><div class="line">brew install openssl</div><div class="line">luarocks install luacrypto OPENSSL_DIR=/usr/<span class="built_in">local</span>/opt/openssl/</div><div class="line">git <span class="built_in">clone</span> https://github.com/facebook/iTorch.git</div><div class="line"><span class="built_in">cd</span> iTorch</div><div class="line">luarocks make</div><div class="line"><span class="comment"># PyTorch</span></div><div class="line">git <span class="built_in">clone</span> https://github.com/pytorch/pytorch.git</div><div class="line"><span class="built_in">cd</span> pytorch</div><div class="line">pip3 install numpy setuptools cmake cffi</div><div class="line">pip3 install -r requirements.txt</div><div class="line">pip3 install tools</div><div class="line">python3 setup.py install</div></pre></td></tr></table></figure>
+<h4 id="安装Caffe"><a href="#安装Caffe" class="headerlink" title="安装Caffe"></a>安装Caffe</h4><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div></pre></td><td class="code"><pre><div class="line">brew install -vd snappy leveldb gflags glog szip lmdb</div><div class="line"><span class="comment"># need the homebrew science source for OpenCV and hdf5</span></div><div class="line">brew tap homebrew/science</div><div class="line">brew install hdf5 opencv</div><div class="line"><span class="comment"># with Python pycaffe needs dependencies built from source</span></div><div class="line">brew install --build-from-source --with-python -vd protobuf</div><div class="line">brew install --build-from-source -vd boost boost-python</div><div class="line">brew install boost snappy leveldb protobuf gflags glog szip lmdb homebrew/science/opencv</div></pre></td></tr></table></figure>
+<p>遇到如下错误<br><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div></pre></td><td class="code"><pre><div class="line">./include/caffe/util/mkl_alternate.hpp:14:10: fatal error: <span class="string">'cblas.h'</span> file not found</div><div class="line"><span class="comment">#include &lt;cblas.h&gt;</span></div><div class="line">         ^</div><div class="line">1 error generated.</div><div class="line">make: *** [.build_release/src/caffe/data_transformer.o] Error 1</div></pre></td></tr></table></figure></p>
+<p><code>mdfind cblas.h</code>找到路径，然后编辑<code>Makefile.config</code>加入路径到这行<br><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">BLAS_INCLUDE := /Library/Developer/CommandLineTools/SDKs/MacOSX.sdk/System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/Headers</div></pre></td></tr></table></figure></p>
+<h3 id="安装mac预览增强工具quick-look-plugins"><a href="#安装mac预览增强工具quick-look-plugins" class="headerlink" title="安装mac预览增强工具quick-look-plugins"></a>安装mac预览增强工具<a href="https://github.com/sindresorhus/quick-look-plugins" target="_blank" rel="external">quick-look-plugins</a></h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">brew cask install qlcolorcode</div></pre></td></tr></table></figure>
+<h3 id="安装Tickeys"><a href="#安装Tickeys" class="headerlink" title="安装Tickeys"></a>安装<a href="http://www.yingdev.com/projects/tickeys" target="_blank" rel="external">Tickeys</a></h3><p><strong>To be continued</strong></p>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;h2 id=&quot;前记&quot;&gt;&lt;a href=&quot;#前记&quot; class=&quot;headerlink&quot; title=&quot;前记&quot;&gt;&lt;/a&gt;前记&lt;/h2&gt;&lt;p&gt;前两天一个逗比的想法突然砸中我的脑袋，我用Mac也一年了，但是之前用的好像不是那么完美，于是强迫症又犯了，于是我做了一个作大死的决定：&lt;strong&gt;重装系统！&lt;/strong&gt;。&lt;/p&gt;
+    
+    </summary>
+    
+    
+      <category term="install" scheme="http://votec.top/tags/install/"/>
+    
+      <category term="macOS" scheme="http://votec.top/tags/macOS/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>macOS下使用SWIG完成Python调用C/C++接口</title>
+    <link href="http://votec.top/2017/01/01/python-swig/"/>
+    <id>http://votec.top/2017/01/01/python-swig/</id>
+    <published>2017-01-01T13:12:54.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<blockquote>
+<p><a href="http://swig.org/translations/chinese/index.html" target="_blank" rel="external">SWIG</a>是个帮助使用C或者C++编写的软件能与其它各种高级编程语言进行嵌入联接的开发工具。SWIG能应用于各种不同类型的语言包括常用脚本编译语言例如Perl, PHP, Python, Tcl, Ruby and PHP。</p>
+</blockquote>
+<p>其中关于mac下的一些特殊用法参考了这个<a href="https://segmentfault.com/a/1190000003948295" target="_blank" rel="external">blog</a>。<br><a id="more"></a></p>
+<h2 id="1-首先写一个最简单的C程序："><a href="#1-首先写一个最简单的C程序：" class="headerlink" title="1. 首先写一个最简单的C程序："></a>1. 首先写一个最简单的C程序：</h2><figure class="highlight cpp"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div></pre></td><td class="code"><pre><div class="line"><span class="function"><span class="keyword">int</span> <span class="title">add</span><span class="params">(<span class="keyword">int</span> a, <span class="keyword">int</span> b)</span></span>&#123;</div><div class="line">  <span class="keyword">return</span> a+b;</div><div class="line">&#125;</div></pre></td></tr></table></figure>
+<h2 id="2-再写一个Swig接口文件："><a href="#2-再写一个Swig接口文件：" class="headerlink" title="2. 再写一个Swig接口文件："></a>2. 再写一个Swig接口文件：</h2><figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div></pre></td><td class="code"><pre><div class="line">//func.i</div><div class="line">%module func</div><div class="line">%&#123;</div><div class="line">  extern int add(int, int);</div><div class="line">%&#125;</div><div class="line">extern int add(int, int);</div></pre></td></tr></table></figure>
+<h2 id="3-编译func-c得到目标文件func-o："><a href="#3-编译func-c得到目标文件func-o：" class="headerlink" title="3. 编译func.c得到目标文件func.o："></a>3. 编译func.c得到目标文件func.o：</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">gcc -c -fpic func.c</div></pre></td></tr></table></figure>
+<h2 id="4-由接口文件func-i生成func-wrap-c和func-py："><a href="#4-由接口文件func-i生成func-wrap-c和func-py：" class="headerlink" title="4. 由接口文件func.i生成func_wrap.c和func.py："></a>4. 由接口文件func.i生成func_wrap.c和func.py：</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">swig -python func.i</div></pre></td></tr></table></figure>
+<p>如果是C++，记得加上<code>-c++</code>参数。</p>
+<h2 id="5-编译接口："><a href="#5-编译接口：" class="headerlink" title="5. 编译接口："></a>5. 编译接口：</h2><p>编译需要用到<code>Python.h</code>头文件，那么在macOS下的<code>Python.h</code>文件在哪呢，具体跟macOS和Xcode版本有关，以<em>MacOSX10.12</em>为例，具体路径在<code>/Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.12.sdk/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7</code>。</p>
+<p>为了以后使用方便，加一个链接到系统include目录：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">ln -s /Applications/Xcode.app/Contents/Developer/Platforms/MacOSX.platform/Developer/SDKs/MacOSX10.12.sdk/System/Library/Frameworks/Python.framework/Versions/2.7/include/python2.7 /usr/<span class="built_in">local</span>/include/python2.7</div></pre></td></tr></table></figure>
+<p>然后编译接口：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">gcc -c -fpic func_wrap.c -I/usr/include/python2.7</div></pre></td></tr></table></figure>
+<h2 id="6-链接目标文件，生成-func-so："><a href="#6-链接目标文件，生成-func-so：" class="headerlink" title="6. 链接目标文件，生成_func.so："></a>6. 链接目标文件，生成_func.so：</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">gcc -shared -lpython2.7 func.o func_wrap.o -o _func.so</div></pre></td></tr></table></figure>
+<p>注意这里需要指定链接的Python版本，用<code>-lpython2.7</code>参数。</p>
+<h2 id="7-最后在在python中import测试："><a href="#7-最后在在python中import测试：" class="headerlink" title="7. 最后在在python中import测试："></a>7. 最后在在python中import测试：</h2><figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line"><span class="keyword">import</span> func</div><div class="line">print(func.add(<span class="number">2</span>,<span class="number">7</span>))</div></pre></td></tr></table></figure>
+<p>这时候会出现一个强力的bug：<code>Fatal Python error: PyThreadState_Get: no current thread</code>，经过不断查找与测试，最终发现是因为brew安装的python出的差错（<a href="http://stackoverflow.com/questions/15678153/homebrew-python-on-mac-os-x-10-8-fatal-python-error-pythreadstate-get-no-cu" target="_blank" rel="external">看这里</a>，即使用自带的头文件编译一样没有用，真是好坑，先后被brew的python 2.7和3.5都坑过了，还是<code>brew remove python</code>卸掉比较安全放心。</p>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;blockquote&gt;
+&lt;p&gt;&lt;a href=&quot;http://swig.org/translations/chinese/index.html&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;SWIG&lt;/a&gt;是个帮助使用C或者C++编写的软件能与其它各种高级编程语言进行嵌入联接的开发工具。SWIG能应用于各种不同类型的语言包括常用脚本编译语言例如Perl, PHP, Python, Tcl, Ruby and PHP。&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;p&gt;其中关于mac下的一些特殊用法参考了这个&lt;a href=&quot;https://segmentfault.com/a/1190000003948295&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;blog&lt;/a&gt;。&lt;br&gt;
+    
+    </summary>
+    
+    
+      <category term="Python" scheme="http://votec.top/tags/Python/"/>
+    
+      <category term="swig" scheme="http://votec.top/tags/swig/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>Python 离线工作环境搭建</title>
+    <link href="http://votec.top/2017/01/01/python-pip-note/"/>
+    <id>http://votec.top/2017/01/01/python-pip-note/</id>
+    <published>2017-01-01T12:12:54.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<p>有时候需要在一个离线的工作环境下建立工作环境，如果手动处理一个一个处理安装包实在太麻烦，其实用好pip就足够完成这些工作了，主要参考了这两篇<a href="http://blog.csdn.net/u011860731/article/details/46573135" target="_blank" rel="external">(1)</a>, <a href="http://blog.csdn.net/u011860731/article/details/46573143" target="_blank" rel="external">(2)</a>。<br><a id="more"></a></p>
+<h3 id="用pip对已有的环境做导出准备"><a href="#用pip对已有的环境做导出准备" class="headerlink" title="用pip对已有的环境做导出准备"></a>用pip对已有的环境做导出准备</h3><ol>
+<li><p>使用pip导出当前环境所有依赖包信息文件</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pip freeze &gt; requirements.txt</div></pre></td></tr></table></figure>
+</li>
+<li><p>下载所有依赖包到本地</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pip install -r requirements.txt -d your_download_dir</div></pre></td></tr></table></figure>
+</li>
+<li><p>在其他环境下(相同的系统环境)安装所有依赖</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pip install -r requirements.txt --no-index --find-links=file://your_download_dir</div></pre></td></tr></table></figure>
+</li>
+<li><p>Enjoy!</p>
+</li>
+</ol>
+<h3 id="P-S"><a href="#P-S" class="headerlink" title="P.S."></a>P.S.</h3><ol>
+<li>Windows下安装SciPy可能会有缺少MKL数学库，无法编译，所以找到了一个网站Unofficial Windows Binaries for Python Extension Packages，主要需要用的科学计算库的whl文件都可以找到，用pip install xxx.whl安装就可以了，非常不错。</li>
+<li>Pip装Spyder有个通病都是缺少PyQt5，在Windows下也一样，应该在Linux下也一样，都可以参考macOS下Python 3科学计算Spyder环境搭建。<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pip install PyQt5</div></pre></td></tr></table></figure>
+</li>
+</ol>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;有时候需要在一个离线的工作环境下建立工作环境，如果手动处理一个一个处理安装包实在太麻烦，其实用好pip就足够完成这些工作了，主要参考了这两篇&lt;a href=&quot;http://blog.csdn.net/u011860731/article/details/46573135&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;(1)&lt;/a&gt;, &lt;a href=&quot;http://blog.csdn.net/u011860731/article/details/46573143&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;(2)&lt;/a&gt;。&lt;br&gt;
+    
+    </summary>
+    
+    
+      <category term="Python" scheme="http://votec.top/tags/Python/"/>
+    
+      <category term="pip" scheme="http://votec.top/tags/pip/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>TensorFlow R12的新checkpoint格式</title>
+    <link href="http://votec.top/2016/12/24/tensorflow-r12-tf-train-Saver-chs/"/>
+    <id>http://votec.top/2016/12/24/tensorflow-r12-tf-train-Saver-chs/</id>
+    <published>2016-12-24T13:12:54.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<p>突然发现TensorFlow R12训练好的样本，用旧版<code>restore</code>会报错:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">ValueError: Restore called with invalid save path</div></pre></td></tr></table></figure>
+<a id="more"></a>
+<p>于是查了查<a href="https://github.com/tensorflow/tensorflow/releases" target="_blank" rel="external"><strong>TensorFlow v0.12.0 RC0’s release note</strong></a>:</p>
+<blockquote>
+<p>New checkpoint format becomes the default in tf.train.Saver. Old V1 checkpoints continue to be readable; controlled by the write_version argument, tf.train.Saver now by default writes out in the new V2 format. It significantly reduces the peak memory required and latency incurred during restore.</p>
+</blockquote>
+<p>就是说<code>tf.train.Saver</code>换新的checkpoint格式了，减少了峰值内存占用，但是旧的也能读，多了一个<code>write_version</code>标签， 新的<strong>V2</strong>，旧的<strong>V1</strong>，像这样子:</p>
+<table>
+<thead>
+<tr>
+<th>old format (V1)</th>
+<th>new format (V2)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>model.ckpt-12345</td>
+<td>model.ckpt-12345.index</td>
+</tr>
+<tr>
+<td>model.ckpt-12345.meta</td>
+<td>model.ckpt-12345.meta</td>
+</tr>
+<tr>
+<td></td>
+<td>model.ckpt-12345.data-00000-of-00001</td>
+</tr>
+</tbody>
+</table>
+<p>但是看了这段话显然我还不知道到底该怎么随意切换呢？然后我扒了扒源码（居然是我第一次扒TensorFlow这么新鲜的代码），找到了 <a href="https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/training/saver.py" target="_blank" rel="external">saver.py</a>, a。其中 <code>tf.train.saver</code> 构造函数是：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line"><span class="function"><span class="keyword">def</span> <span class="title">__init__</span><span class="params">(self, write_version=saver_pb2.SaverDef.V2)</span>:</span></div><div class="line">  self._write_version = write_version</div></pre></td></tr></table></figure>
+<p>所以，要写成旧版的checkpoint格式，就要这样:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div></pre></td><td class="code"><pre><div class="line"><span class="keyword">import</span> tensorflow <span class="keyword">as</span> tf</div><div class="line"><span class="keyword">from</span> tensorflow.core.protobuf <span class="keyword">import</span> saver_pb2</div><div class="line">...</div><div class="line">saver = tf.train.Saver(write_version = saver_pb2.SaverDef.V1)</div><div class="line">saver.save(sess, <span class="string">'./model.ckpt'</span>, global_step = step)</div></pre></td></tr></table></figure>
+<p>虽然可以用了，但是有好多<strong>WARNING …</strong> :</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div></pre></td><td class="code"><pre><div class="line">WARNING:tensorflow:*******************************************************</div><div class="line">WARNING:tensorflow:TensorFlow&apos;s V1 checkpoint format has been deprecated.</div><div class="line">WARNING:tensorflow:Consider switching to the more efficient V2 format:</div><div class="line">WARNING:tensorflow: `tf.train.Saver(write_version=tf.train.SaverDef.V2)`</div><div class="line">WARNING:tensorflow:now on by default.</div><div class="line">WARNING:tensorflow:*******************************************************</div></pre></td></tr></table></figure>
+<p>所以呢，旧的模型文件可以这样凑合用一下，还是尽快把程序统一升级到R12吧，毕竟已经支持pip无缝安装了。</p>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;突然发现TensorFlow R12训练好的样本，用旧版&lt;code&gt;restore&lt;/code&gt;会报错:&lt;/p&gt;
+&lt;figure class=&quot;highlight plain&quot;&gt;&lt;table&gt;&lt;tr&gt;&lt;td class=&quot;gutter&quot;&gt;&lt;pre&gt;&lt;div class=&quot;line&quot;&gt;1&lt;/div&gt;&lt;/pre&gt;&lt;/td&gt;&lt;td class=&quot;code&quot;&gt;&lt;pre&gt;&lt;div class=&quot;line&quot;&gt;ValueError: Restore called with invalid save path&lt;/div&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;&lt;/figure&gt;
+    
+    </summary>
+    
+    
+      <category term="TensorFlow" scheme="http://votec.top/tags/TensorFlow/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>New checkpoint format in TensorFlow R12</title>
+    <link href="http://votec.top/2016/12/24/tensorflow-r12-tf-train-Saver/"/>
+    <id>http://votec.top/2016/12/24/tensorflow-r12-tf-train-Saver/</id>
+    <published>2016-12-24T13:02:54.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<p>Suddenly, when restore checkpoint save by the TensorFlow R12 with old version, some errors occurs:</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">ValueError: Restore called with invalid save path</div></pre></td></tr></table></figure>
+<a id="more"></a>
+<p>According to the <a href="https://github.com/tensorflow/tensorflow/releases" target="_blank" rel="external"><strong>TensorFlow v0.12.0 RC0’s release note</strong></a>:</p>
+<blockquote>
+<p>New checkpoint format becomes the default in tf.train.Saver. Old V1 checkpoints continue to be readable; controlled by the write_version argument, tf.train.Saver now by default writes out in the new V2 format. It significantly reduces the peak memory required and latency incurred during restore.</p>
+</blockquote>
+<p>The <code>tf.train.Saver</code> has a new checkpoint format with <code>write_version</code> flag <strong>V2</strong>, and old format with <strong>V1</strong>. For example:</p>
+<table>
+<thead>
+<tr>
+<th>old format (V1)</th>
+<th>new format (V2)</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>model.ckpt-12345</td>
+<td>model.ckpt-12345.index</td>
+</tr>
+<tr>
+<td>model.ckpt-12345.meta</td>
+<td>model.ckpt-12345.meta</td>
+</tr>
+<tr>
+<td></td>
+<td>model.ckpt-12345.data-00000-of-00001</td>
+</tr>
+</tbody>
+</table>
+<p>What if we want to use the old trained checkpoint? So I look into the source file of <a href="https://github.com/tensorflow/tensorflow/blob/master/tensorflow/python/training/saver.py" target="_blank" rel="external">saver.py</a>, and find out the init function of the <code>tf.train.saver</code> is:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line"><span class="function"><span class="keyword">def</span> <span class="title">__init__</span><span class="params">(self, write_version=saver_pb2.SaverDef.V2)</span>:</span></div><div class="line">  self._write_version = write_version</div></pre></td></tr></table></figure>
+<p>We can easily save trained checkpoint in the old way like this:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div></pre></td><td class="code"><pre><div class="line"><span class="keyword">import</span> tensorflow <span class="keyword">as</span> tf</div><div class="line"><span class="keyword">from</span> tensorflow.core.protobuf <span class="keyword">import</span> saver_pb2</div><div class="line">...</div><div class="line">saver = tf.train.Saver(write_version = saver_pb2.SaverDef.V1)</div><div class="line">saver.save(sess, <span class="string">'./model.ckpt'</span>, global_step = step)</div></pre></td></tr></table></figure>
+<p>However, we will get lots of <strong>WARNING …</strong> :</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div></pre></td><td class="code"><pre><div class="line">WARNING:tensorflow:*******************************************************</div><div class="line">WARNING:tensorflow:TensorFlow&apos;s V1 checkpoint format has been deprecated.</div><div class="line">WARNING:tensorflow:Consider switching to the more efficient V2 format:</div><div class="line">WARNING:tensorflow: `tf.train.Saver(write_version=tf.train.SaverDef.V2)`</div><div class="line">WARNING:tensorflow:now on by default.</div><div class="line">WARNING:tensorflow:*******************************************************</div></pre></td></tr></table></figure>
+<p>So, once we migrate our tf code to R12, we’d better use the new checkpoint format for better performance.</p>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;Suddenly, when restore checkpoint save by the TensorFlow R12 with old version, some errors occurs:&lt;/p&gt;
+&lt;figure class=&quot;highlight plain&quot;&gt;&lt;table&gt;&lt;tr&gt;&lt;td class=&quot;gutter&quot;&gt;&lt;pre&gt;&lt;div class=&quot;line&quot;&gt;1&lt;/div&gt;&lt;/pre&gt;&lt;/td&gt;&lt;td class=&quot;code&quot;&gt;&lt;pre&gt;&lt;div class=&quot;line&quot;&gt;ValueError: Restore called with invalid save path&lt;/div&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;&lt;/figure&gt;
+    
+    </summary>
+    
+    
+      <category term="TensorFlow" scheme="http://votec.top/tags/TensorFlow/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>用Python+matplotlib绘制朱利亚集合(Julia Set)和曼德博集合(Mandelbrot Set)</title>
+    <link href="http://votec.top/2016/12/05/python-julia/"/>
+    <id>http://votec.top/2016/12/05/python-julia/</id>
+    <published>2016-12-05T14:17:30.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<p>参见：<a href="https://zh.wikipedia.org/wiki/%E6%9C%B1%E5%88%A9%E4%BA%9A%E9%9B%86%E5%90%88" target="_blank" rel="external">维基百科-朱利亚集合</a>。</p>
+<blockquote>
+<p><strong>朱利亚集合</strong>（又译为茹利亚集合，英文：Julia set）是一个在复平面上形成分形的点的集合。以法国数学家加斯顿·朱利亚（Gaston Julia）的名字命名。<br><em>定义：</em><br>朱利亚集合可以由下式进行反复迭代得到：<br><a id="more"></a><br>$$f_c(z)=z^2+c$$<br>对于固定的复数$c$，取某一$z$值（如$z=z_0$），可以得到序列<br>$$z_0, f_c(z_0), f_c(f_c(z_0)), f_c(f_c(f_c(z_0))), f_c(f_c(f_c(z_0))) …$$<br>这一序列可能发散于无穷大或始终处于某一范围之内并收敛于某一值。我们将使其不扩散的z值的集合称为朱利亚集合。</p>
+</blockquote>
+<p>简言之，要绘制Julia Set图像，就是对复平面上任意一点按照 $f_c(z)=z^2+c$进行迭代，看多少步会发散，这个发散值被定义为zmax，然后将复平面上所有点迭代到发散的步数用云图方式画出来，就是Julia Set图像了。</p>
+<p>所以写一个<code>iterate</code>函数，就是对于输入<code>z0</code>，按照公式迭代，返回迭代到发散的步数。具体代码如下：<br><figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div><div class="line">10</div><div class="line">11</div><div class="line">12</div><div class="line">13</div><div class="line">14</div><div class="line">15</div><div class="line">16</div><div class="line">17</div><div class="line">18</div><div class="line">19</div><div class="line">20</div><div class="line">21</div><div class="line">22</div><div class="line">23</div></pre></td><td class="code"><pre><div class="line"><span class="keyword">import</span> matplotlib.pyplot <span class="keyword">as</span> plt</div><div class="line"><span class="keyword">import</span> numpy <span class="keyword">as</span> np</div><div class="line"><span class="function"><span class="keyword">def</span> <span class="title">iterate</span><span class="params">(n,z0,zmax)</span>:</span></div><div class="line">  z=z0*z0+C</div><div class="line">  <span class="keyword">for</span> i <span class="keyword">in</span> range(n):</div><div class="line">    <span class="keyword">if</span> abs(z)&gt;zmax:</div><div class="line">      <span class="keyword">return</span> i</div><div class="line">    z=z*z+C</div><div class="line">  <span class="keyword">return</span> n</div><div class="line">C=<span class="number">0.285</span>+<span class="number">0.01j</span></div><div class="line">n,zmax=<span class="number">200</span>,<span class="number">10.</span></div><div class="line">imin,imax,jmin,jmax=<span class="number">-1.5</span>,<span class="number">1.5</span>,<span class="number">-1.5</span>,<span class="number">1.5</span></div><div class="line">step=<span class="number">0.005</span></div><div class="line">i=np.arange(imin,imax,step)</div><div class="line">j=np.arange(jmax,jmin,-step)</div><div class="line">I,J=np.meshgrid(i, j)</div><div class="line">ufunc=np.frompyfunc(iterate,<span class="number">3</span>,<span class="number">1</span>)</div><div class="line">Z=ufunc(n,I+<span class="number">1j</span>*J,zmax).astype(np.int16)</div><div class="line">plt.imshow(Z,extent=(imin,imax,jmin,jmax))</div><div class="line">cb = plt.colorbar(orientation=<span class="string">'vertical'</span>,shrink=<span class="number">1</span>)</div><div class="line">cb.set_label(<span class="string">'iteration count'</span>)</div><div class="line">plt.savefig(<span class="string">'0.285+0.01j.png'</span>,dpi=<span class="number">300</span>)</div><div class="line">plt.show()</div></pre></td></tr></table></figure></p>
+<p>这里生成网格点用了<em>numpy</em>的<code>meshgrid()</code>，绘制云图用到了matplotlib的<code>imshow()</code>函数。对于<code>C=0.285+0.01j</code>得到的图像就像如下：</p>
+<p><img src="http://votec.top/images/juia_set_0.285+0.01j.png" alt="C=0.285+0.01j"></p>
+<p>还可以取其他的C值得到各种漂亮的图像哦，比如：<code>0.285+0.0j</code>，<code>0.360284+0.100376j</code>等等。。</p>
+<p>如果要绘制<a href="https://zh.wikipedia.org/wiki/%E6%9B%BC%E5%BE%B7%E5%8D%9A%E9%9B%86%E5%90%88" target="_blank" rel="external">曼德博集合(Mandelbrot set)</a>。方法与Julia Set基本一致，不同的是迭代发生了变化，变成了：$f_c(z)=z^2+z_0$。因此只要对上边的函数做小小改的就可以画出曼德博集合了：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div></pre></td><td class="code"><pre><div class="line"><span class="function"><span class="keyword">def</span> <span class="title">iterate</span><span class="params">(n,z0,zmax)</span>:</span></div><div class="line">  z=z0*z0+z0</div><div class="line">  <span class="keyword">for</span> i <span class="keyword">in</span> range(n):</div><div class="line">    <span class="keyword">if</span> abs(z)&gt;zmax:</div><div class="line">      <span class="keyword">return</span> i</div><div class="line">    z=z*z+z0</div><div class="line">  <span class="keyword">return</span> n</div></pre></td></tr></table></figure>
+<p>绘制出的图形如下：</p>
+<p><img src="http://votec.top/images/Mandelbrot_set.png" alt="Mandelbrot_set"></p>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;参见：&lt;a href=&quot;https://zh.wikipedia.org/wiki/%E6%9C%B1%E5%88%A9%E4%BA%9A%E9%9B%86%E5%90%88&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;维基百科-朱利亚集合&lt;/a&gt;。&lt;/p&gt;
+&lt;blockquote&gt;
+&lt;p&gt;&lt;strong&gt;朱利亚集合&lt;/strong&gt;（又译为茹利亚集合，英文：Julia set）是一个在复平面上形成分形的点的集合。以法国数学家加斯顿·朱利亚（Gaston Julia）的名字命名。&lt;br&gt;&lt;em&gt;定义：&lt;/em&gt;&lt;br&gt;朱利亚集合可以由下式进行反复迭代得到：&lt;br&gt;
+    
+    </summary>
+    
+    
+      <category term="Python" scheme="http://votec.top/tags/Python/"/>
+    
+      <category term="matplotlib" scheme="http://votec.top/tags/matplotlib/"/>
+    
+      <category term="Julia &amp; Mandelbrot set" scheme="http://votec.top/tags/Julia-Mandelbrot-set/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>macOS使用default write的一些系统小参数设置</title>
+    <link href="http://votec.top/2016/11/27/macos-default-write/"/>
+    <id>http://votec.top/2016/11/27/macos-default-write/</id>
+    <published>2016-11-27T14:24:32.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<blockquote>
+<p>以下参考了<a href="https://nyk.moe/archives/software/best-defaults-write-commands-mac-os-x" target="_blank" rel="external">这里</a></p>
+</blockquote>
+<h3 id="设定隐藏-显示dock的时间"><a href="#设定隐藏-显示dock的时间" class="headerlink" title="设定隐藏/显示dock的时间"></a>设定隐藏/显示dock的时间</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">defaults write com.apple.Dock autohide-delay -<span class="built_in">float</span> 0 &amp;&amp; killall dock</div><div class="line"><span class="comment"># float x seconds</span></div></pre></td></tr></table></figure>
+<a id="more"></a>
+<h3 id="设定隐藏-显示dock的时间-1"><a href="#设定隐藏-显示dock的时间-1" class="headerlink" title="设定隐藏/显示dock的时间"></a>设定隐藏/显示dock的时间</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">defaults write com.apple.dock expose-animation-duration -<span class="built_in">float</span> 0.12 &amp;&amp; killall Dock <span class="comment"># float x seconds</span></div></pre></td></tr></table></figure>
+<h3 id="改变截图的默认保存地址"><a href="#改变截图的默认保存地址" class="headerlink" title="改变截图的默认保存地址"></a>改变截图的默认保存地址</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">defaults write com.apple.screencapture location ~/Pictures/Screenshots</div></pre></td></tr></table></figure>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;blockquote&gt;
+&lt;p&gt;以下参考了&lt;a href=&quot;https://nyk.moe/archives/software/best-defaults-write-commands-mac-os-x&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;这里&lt;/a&gt;&lt;/p&gt;
+&lt;/blockquote&gt;
+&lt;h3 id=&quot;设定隐藏-显示dock的时间&quot;&gt;&lt;a href=&quot;#设定隐藏-显示dock的时间&quot; class=&quot;headerlink&quot; title=&quot;设定隐藏/显示dock的时间&quot;&gt;&lt;/a&gt;设定隐藏/显示dock的时间&lt;/h3&gt;&lt;figure class=&quot;highlight bash&quot;&gt;&lt;table&gt;&lt;tr&gt;&lt;td class=&quot;gutter&quot;&gt;&lt;pre&gt;&lt;div class=&quot;line&quot;&gt;1&lt;/div&gt;&lt;div class=&quot;line&quot;&gt;2&lt;/div&gt;&lt;/pre&gt;&lt;/td&gt;&lt;td class=&quot;code&quot;&gt;&lt;pre&gt;&lt;div class=&quot;line&quot;&gt;defaults write com.apple.Dock autohide-delay -&lt;span class=&quot;built_in&quot;&gt;float&lt;/span&gt; 0 &amp;amp;&amp;amp; killall dock&lt;/div&gt;&lt;div class=&quot;line&quot;&gt;&lt;span class=&quot;comment&quot;&gt;# float x seconds&lt;/span&gt;&lt;/div&gt;&lt;/pre&gt;&lt;/td&gt;&lt;/tr&gt;&lt;/table&gt;&lt;/figure&gt;
+    
+    </summary>
+    
+    
+      <category term="macOS" scheme="http://votec.top/tags/macOS/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>macOS下Python 3科学计算Spyder环境搭建</title>
+    <link href="http://votec.top/2016/11/27/macos-spyder-install/"/>
+    <id>http://votec.top/2016/11/27/macos-spyder-install/</id>
+    <published>2016-11-27T14:11:20.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="brew-python3的不服"><a href="#brew-python3的不服" class="headerlink" title="brew python3的不服"></a>brew python3的不服</h2><p>由于之前使用<em>brew</em>安装的<em>Python3</em>各种不服，找不到pip(可使用<code>python -mpip</code>命令代替解决)，pip更新出错，安装Spyder后离奇bug：<code>NameError: name &#39;runfile&#39; is not defined</code>… 但是<em>macvim</em>又要依赖于<em>Python</em>，不管他，直接<code>brew install macvim</code>然后这个依赖应该忽略不计了。<br><a id="more"></a></p>
+<h2 id="安装-amp-卸载Anaconda"><a href="#安装-amp-卸载Anaconda" class="headerlink" title="安装&amp;卸载Anaconda"></a>安装&amp;卸载Anaconda</h2><p>尝试安装<em>Anaconda</em>，<em>Anaconda</em>但是其实是內建的环境，而且目前只release到<em>Spyder2</em>，因此卸载之，干净卸载参考<a href="https://docs.continuum.io/anaconda/install#simple-remove" target="_blank" rel="external">官方文档Simple remove部分</a>：</p>
+<blockquote>
+<p><strong>Simple remove</strong></p>
+<p><em>WINDOWS</em>: In the Control Panel, choose “Add or Remove Programs” or “Uninstall a program” and then select “Python 3.5 (Anaconda)” or your version of Python.</p>
+<p><em>OS X</em>: Open the Terminal.app or iTerm2 terminal application and remove your entire Anaconda directory, which will have a name such as “anaconda2” or “anaconda3”, by entering the following command: <code>rm -rf ~/anaconda3</code></p>
+<p><em>LINUX</em>: Open a terminal window and remove your entire Anaconda directory, which will have a name such as “anaconda2” or “anaconda3”, by entering the following command: <code>rm -rf ~/anaconda3</code></p>
+</blockquote>
+<p>然后，顺便清理一下环境变量就好了。</p>
+<p>好了，鉴于上述的种种问题，虽然凑凑活活都没问题，但是<strong>依然不爽</strong>。墨迹墨迹终于决定要重新搭建一个干净舒服的Python科学计算环境了。正文部分开始。</p>
+<h2 id="Python3安装"><a href="#Python3安装" class="headerlink" title="Python3安装"></a>Python3安装</h2><p><em>Python 2 vs 3</em>之争不多说，反正我觉得以后用3就对了，但是写程序注意一下<code>print()</code>、<code>range()</code>、浮点数之类的语法，尽量保证程序版本都兼容比较好。被<em>brew</em>伤了心，这次乖乖的去安装<a href="https://www.python.org/downloads/mac-osx/" target="_blank" rel="external">官网的Python3</a>，省时省心，安全可靠，不用心疼自己MAC去编译了。过程很简单，下载安装就好。</p>
+<p>安装完可以更改一下pip源，试过<em>阿里云</em>的源不错，速度稳稳上1MB。编辑<code>.pip/pip.conf</code>，我是这样写的：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div></pre></td><td class="code"><pre><div class="line">[global]</div><div class="line">timeout = 6000</div><div class="line">trusted-host = mirrors.aliyun.com</div><div class="line">index-url = http://mirrors.aliyun.com/pypi/simple</div><div class="line">[install]</div><div class="line">timeout = 6000</div><div class="line">use-mirrors = true</div><div class="line">trusted-host = mirrors.aliyun.com</div><div class="line">index-url = http://mirrors.aliyun.com/pypi/simple</div></pre></td></tr></table></figure>
+<p>最后记得<code>pip3 install --upgrade pip</code>更新一下pip。</p>
+<h2 id="Spyder3安装"><a href="#Spyder3安装" class="headerlink" title="Spyder3安装"></a>Spyder3安装</h2><p><em>Python</em>科学计算的平台用过几个，但是还是<em>Spyder</em>用的比较舒心。版本虽然已经到3了，但是<em>Anaconda</em>还没跟上，还是自己单独安装比较舒服。</p>
+<p>安装参考<a href="https://github.com/spyder-ide/spyder/releases" target="_blank" rel="external">官方安装指南</a>，看到官方放出最新的Release着实有点大了，完全把所有的<em>Python</em>环境打包了，用的不是本地的，有点臃肿，嫌麻烦的自然可以考虑。所以，选择手动安装之。用官方的命令：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pip3 install -U spyder</div></pre></td></tr></table></figure>
+<p>装好好发现不能启动，自己一点一点找问题，最后发现虽然装了<strong>QtPy</strong>，但是缺少了<strong>PyQt5</strong>库，安装之。</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pip3 install PyQt5</div></pre></td></tr></table></figure>
+<p>再试着运行Spyder就妥妥没问题了。</p>
+<p>但是命令行启动总是要占一个窗口，终端后台运行又有点尴尬。所以目光转向了官方打包好的Release，从它开始动手，把其他的东西全去掉，只留图标和包说明文件就好，把<code>Contents/MacOS/Spyder</code>替换成刚安装好的<code>/Library/Frameworks/Python.framework/Versions/3.5/bin/Spyder</code>就OK了，应用从600多MB到197KB，好舒心~ <code>tree Spyder.app</code>之后大概是这个样子：</p>
+<figure class="highlight plain"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div></pre></td><td class="code"><pre><div class="line">Spyder.app</div><div class="line">└── Contents</div><div class="line">├── Info.plist</div><div class="line">├── MacOS</div><div class="line">│   └── Spyder</div><div class="line">├── PkgInfo</div><div class="line">└── Resources</div><div class="line">└── spyder.icns</div><div class="line">3 directories, 4 files</div></pre></td></tr></table></figure>
+<p><code>~/.bash_profile</code>添加<code>alias spyder=&quot;open -a Spyder&quot;</code>后，用<code>spyder</code>命令启动非常完美，而且还可以点图标启动哦，终于不是Python小火箭图标了。</p>
+<h2 id="其他科学计算库"><a href="#其他科学计算库" class="headerlink" title="其他科学计算库"></a>其他科学计算库</h2><p>然后安装其他的一些科学计算库：</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div></pre></td><td class="code"><pre><div class="line">pip3 install numpy scipy pandas scikit-learn</div><div class="line">pip3 install ipython notebook cython</div><div class="line">pip3 install networkx</div><div class="line"><span class="built_in">export</span> TF_BINARY_URL=https://storage.googleapis.com/tensorflow/mac/cpu/tensorflow-0.11.0-py3-none-any.whl\</div><div class="line">sudo pip3 install --upgrade <span class="variable">$TF_BINARY_URL</span></div></pre></td></tr></table></figure>
+<p><strong><em>END</em></strong></p>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;h2 id=&quot;brew-python3的不服&quot;&gt;&lt;a href=&quot;#brew-python3的不服&quot; class=&quot;headerlink&quot; title=&quot;brew python3的不服&quot;&gt;&lt;/a&gt;brew python3的不服&lt;/h2&gt;&lt;p&gt;由于之前使用&lt;em&gt;brew&lt;/em&gt;安装的&lt;em&gt;Python3&lt;/em&gt;各种不服，找不到pip(可使用&lt;code&gt;python -mpip&lt;/code&gt;命令代替解决)，pip更新出错，安装Spyder后离奇bug：&lt;code&gt;NameError: name &amp;#39;runfile&amp;#39; is not defined&lt;/code&gt;… 但是&lt;em&gt;macvim&lt;/em&gt;又要依赖于&lt;em&gt;Python&lt;/em&gt;，不管他，直接&lt;code&gt;brew install macvim&lt;/code&gt;然后这个依赖应该忽略不计了。&lt;br&gt;
+    
+    </summary>
+    
+    
+      <category term="install" scheme="http://votec.top/tags/install/"/>
+    
+      <category term="macOS" scheme="http://votec.top/tags/macOS/"/>
+    
+      <category term="Python" scheme="http://votec.top/tags/Python/"/>
+    
+      <category term="spyder" scheme="http://votec.top/tags/spyder/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>markdown语法小总结</title>
+    <link href="http://votec.top/2016/11/26/markdown/"/>
+    <id>http://votec.top/2016/11/26/markdown/</id>
+    <published>2016-11-26T14:11:20.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<p><strong>以下内容均采用 <em>mardown语法</em> + <em>效果</em> 的方式说明</strong></p>
+<figure class="highlight markdown"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line"><span class="quote">&gt; 引用详情参考[Markdown 语法说明 (简体中文版)](http://wowubuntu.com/markdown/)</span></div><div class="line"><span class="quote">&gt; &gt; 可以在再引用</span></div></pre></td></tr></table></figure>
+<blockquote>
+<p>引用详情参考<a href="http://wowubuntu.com/markdown/" target="_blank" rel="external">Markdown 语法说明 (简体中文版)</a></p>
+<blockquote>
+<p>可以在再引用</p>
+</blockquote>
+</blockquote>
+<figure class="highlight markdown"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div></pre></td><td class="code"><pre><div class="line"><span class="section"># 一级标题</span></div><div class="line"><span class="section">## 二级标题</span></div><div class="line"><span class="section">### 三级标题</span></div><div class="line"><span class="section">#### 四级标题...</span></div></pre></td></tr></table></figure>
+<h1 id="一级标题"><a href="#一级标题" class="headerlink" title="一级标题"></a>一级标题</h1><h2 id="二级标题"><a href="#二级标题" class="headerlink" title="二级标题"></a>二级标题</h2><h3 id="三级标题"><a href="#三级标题" class="headerlink" title="三级标题"></a>三级标题</h3><h4 id="四级标题…"><a href="#四级标题…" class="headerlink" title="四级标题…"></a>四级标题…</h4><table>
+<thead>
+<tr>
+<th>markdown文字效果</th>
+<th>效果</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>**加粗**</code></td>
+<td><strong>加粗</strong></td>
+</tr>
+<tr>
+<td><code>_斜体_</code></td>
+<td><em>斜体</em></td>
+</tr>
+<tr>
+<td><code>_**斜体加粗**_</code></td>
+<td><em><strong>斜体加粗</strong></em></td>
+</tr>
+<tr>
+<td><code>&lt;del&gt;删除&lt;/del&gt;</code></td>
+<td><del>删除</del></td>
+</tr>
+<tr>
+<td><code>&lt;center&gt;居中&lt;/center&gt;</code></td>
+<td><center>居中</center></td>
+</tr>
+<tr>
+<td><code>换行&lt;/br&gt;换行</code></td>
+<td>换行<br>换行</td>
+</tr>
+<tr>
+<td><code>&amp;#160;空白</code></td>
+<td>&#160;空白</td>
+</tr>
+</tbody>
+</table>
+<figure class="highlight markdown"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div></pre></td><td class="code"><pre><div class="line">左对齐|居中对齐|右对齐</div><div class="line">:--|:-:|--:</div><div class="line">内容|内容|内容</div><div class="line">再一行| |</div></pre></td></tr></table></figure>
+<table>
+<thead>
+<tr>
+<th style="text-align:left">左对齐</th>
+<th style="text-align:center">居中对齐</th>
+<th style="text-align:right">右对齐</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td style="text-align:left">内容</td>
+<td style="text-align:center">内容</td>
+<td style="text-align:right">内容</td>
+</tr>
+<tr>
+<td style="text-align:left">再一行</td>
+<td style="text-align:center"></td>
+<td style="text-align:right"></td>
+</tr>
+</tbody>
+</table>
+<div class="tip"><br><em>markdown</em> 的换行可以两段中间空一行, 也可以上一行末尾跟两个空格<br></div>
+
+<figure class="highlight markdown"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div></pre></td><td class="code"><pre><div class="line">[<span class="string">链接</span>](<span class="link">http://www.votec.top</span>)</div><div class="line">![<span class="string">图片链接</span>](<span class="link">/images/enen.jpg</span>)</div><div class="line">![<span class="string">Ferrari</span>](<span class="link">http://auto.ferrari.com/en_EN/wp-content/themes/ferrari-gt/img/logo_ferrari-home.png</span>)</div></pre></td></tr></table></figure>
+<p><a href="http://www.votec.top" target="_blank" rel="external">链接</a></p>
+<p><img src="/images/enen.jpg" alt="图片链接"></p>
+<p><img src="http://auto.ferrari.com/en_EN/wp-content/themes/ferrari-gt/img/logo_ferrari-home.png" alt="Ferrari"></p>
+<figure class="highlight markdown"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div></pre></td><td class="code"><pre><div class="line">行内的一小段代码 <span class="code">`print()`</span></div><div class="line"><span class="code">``` cpp</span></div><div class="line"><span class="code">#include &lt;iostream&gt;</span></div><div class="line"><span class="code">int main()&#123;</span></div><div class="line"><span class="code">  std::cout&lt;&lt;"hello world!";</span></div><div class="line"><span class="code">  return 0;</span></div><div class="line"><span class="code">&#125;</span></div></pre></td></tr></table></figure>
+<p>行内的一小段代码 <code>print()</code><br><figure class="highlight cpp"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div></pre></td><td class="code"><pre><div class="line"><span class="meta">#<span class="meta-keyword">include</span> <span class="meta-string">&lt;iostream&gt;</span></span></div><div class="line"><span class="function"><span class="keyword">int</span> <span class="title">main</span><span class="params">()</span></span>&#123;</div><div class="line">  <span class="built_in">std</span>::<span class="built_in">cout</span>&lt;&lt;<span class="string">"hello world!"</span>;</div><div class="line">  <span class="keyword">return</span> <span class="number">0</span>;</div><div class="line">&#125;</div></pre></td></tr></table></figure></p>
+<figure class="highlight markdown"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">分割线</div><div class="line">---</div></pre></td></tr></table></figure>
+<h2 id="分割线-这里的渲染有问题"><a href="#分割线-这里的渲染有问题" class="headerlink" title="分割线(这里的渲染有问题)"></a>分割线(这里的渲染有问题)</h2><figure class="highlight markdown"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div></pre></td><td class="code"><pre><div class="line">数字列表(以下为常用的代码标识):</div><div class="line">  1. python</div><div class="line">  2. bash</div><div class="line">  3. cpp</div><div class="line">  4. java</div><div class="line">  5. text</div></pre></td></tr></table></figure>
+<p>数字列表(以下为常用的代码标识):</p>
+<ol>
+<li>python</li>
+<li>bash</li>
+<li>cpp</li>
+<li>java</li>
+<li>text</li>
+</ol>
+<figure class="highlight markdown"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div></pre></td><td class="code"><pre><div class="line"><span class="bullet">* </span>列表</div><div class="line"><span class="bullet">* </span>可以用*</div><div class="line"><span class="bullet">* </span>可以用*</div><div class="line"><span class="bullet">+ </span>也可以用+</div><div class="line"><span class="bullet">+ </span>也可以用+</div><div class="line"><span class="bullet">- </span>也可以用-</div><div class="line"><span class="bullet">- </span>也可以用-</div></pre></td></tr></table></figure>
+<ul>
+<li>列表</li>
+<li>可以用*</li>
+<li>可以用*</li>
+</ul>
+<ul>
+<li>也可以用+</li>
+<li>也可以用+</li>
+</ul>
+<ul>
+<li>也可以用-</li>
+<li>也可以用-</li>
+</ul>
+<p><em><strong>END</strong></em></p>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;&lt;strong&gt;以下内容均采用 &lt;em&gt;mardown语法&lt;/em&gt; + &lt;em&gt;效果&lt;/em&gt; 的方式说明&lt;/strong&gt;&lt;/p&gt;
+&lt;figure class=&quot;highlight markdown&quot;&gt;&lt;table&gt;&lt;tr&gt;&lt;td class=&quot;gutter&quot;&gt;&lt;pre
+    
+    </summary>
+    
+    
+      <category term="markdown" scheme="http://votec.top/tags/markdown/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>数据挖掘到底在做什么</title>
+    <link href="http://votec.top/2016/10/22/datamining-overview/"/>
+    <id>http://votec.top/2016/10/22/datamining-overview/</id>
+    <published>2016-10-22T14:03:21.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<h2 id="数据挖掘问题类别"><a href="#数据挖掘问题类别" class="headerlink" title="数据挖掘问题类别"></a>数据挖掘问题类别</h2><p><strong>数据挖掘</strong>简言之就是从数据中提取和发掘有价值的信息，具体问题有：回归、分类、聚类等，下面就尽量通俗的讲解来理解到底<strong>数据挖掘</strong>做了什么。<br><a id="more"></a></p>
+<h3 id="回归"><a href="#回归" class="headerlink" title="回归"></a>回归</h3><p><strong>回归</strong>问题最通俗解释就是对已给未知的输入输出关系进行拟合，与数学里的回归问题是一样的，如学到过线性回归、插值、拟合都属于这一范畴。与这些传统的插值拟合问题不同，插值拟合往往是已知某个具体的数学表达式，来对数据进行逼近，这类问题往往有具体的规律可循，即使是非线性问题，也有如指数、对数、三角函数等规律。而对于数据挖掘里的回归问题，输入输出的关系是超强非线性的。</p>
+<!-- more -->
+<p>这里的超强非线性已经超越的仅仅不是线性关系这么简单，虽然最终数据挖掘模型还是有解析的表达式，但是其所能描述的复杂关系已经超越了人的想象能力，比如下图中一个深度网络的示意图所展示的复杂的关系，而实际的深度网络可能比这个还要复杂的多。除此之外，许多数据挖掘模型更是一些没有具体表达式，而是依赖于逻辑关系的，如决策树、贝叶斯等等等等，许多方法更像是建立一种描述复杂问题的逻辑而非拟合某个形式的表达式本身。只有把用一个模型把大量的数据所隐含的规律描述出来，才有可能进行进一步的分析工作，可以说回归是分析一个数据问题的基础。</p>
+<p><img src="http://neuralnetworksanddeeplearning.com/images/tikz36.png" alt="深度学习网络示意图"></p>
+<h3 id="分类"><a href="#分类" class="headerlink" title="分类"></a>分类</h3><p><strong>分类</strong>问题从字面上就很好理解，就是把数据按照某个模型判断其所从属的类别，而数据挖掘分类所要处理的问题就是如何训练得到这样一个用来分类的模型。</p>
+<p>其实从本质上而言，分类分类问题与回归问题其实是一样的，像开源数据挖掘工具<a href="http://www.cs.waikato.ac.nz/ml/weka/" target="_blank" rel="external">Weka</a>就将两者归为一类问题处理。像上文提到的很多算法，像贝叶斯、神经网络等等都是用来做分类问题的。比如对于一个判断数据从属与 0 和 1 两个类别的分类问题，对于计算机而言是判断其更偏向于0，还是更偏向于1，对于贝叶斯网络而言就是预测从属于0和从属于1的概率谁更大，对于神经网络而言就是预测的输出层更接近于哪一类别。</p>
+<p>回归与分类两者的区别更像是对于输出形式的一个不同描述，如在用神经网络处理一个分类问题时，用不同的输出层神经元形式来描述，但是本质上讲是一样的，比如我们可以吧0/1分类问题看成是预测一个数值更接近于0，还是更接近于1，还可以看成对于0和1分别预测一个值，看哪个预测值更大，这些处理方法的不同，因具体问题而异，需要具体问题具体分析。</p>
+<h3 id="聚类"><a href="#聚类" class="headerlink" title="聚类"></a>聚类</h3><p><strong>聚类</strong>问题如果从字面上看与分类可能很像，但是其本质却与分类又是不一样的。与<strong>分类 (Classify)</strong>不同，<strong>聚类</strong>的英文是<strong>Cluster</strong>，聚类问题事先不知道每一组数据从属于哪一类别，通过对大量数据的分析处理，来挖掘数据中的相关性，将具有相同特征的数据归为一类。</p>
+<p>这里要提到一个概念：<strong>有监督学习</strong>和<strong>无监督学习</strong>，在对应的就是分类问题和聚类问题。<strong>有监督</strong>的直观一点的含义就是事先知道输入数据对应的输出特征，模型训练的过程是通过输出来在不断的调整模型参数使模型的输入输出与数据匹配，因此对应分类问题。而<strong>无监督</strong>不一样的是不知道输入对应输出的类别，更多的是在分析每一条数据之间的关联关系，将具有相同特征的数据标记为一类，因此对应的是聚类问题，当然最理想的聚类结果是能够获得和分类一样效果。</p>
+<p>分类和聚类的模型很多在本质上是很相似的，更多的是训练方法的区别，如分类下有KNN方法，而聚类则是KMeans方法，两种方法本质上讲都是通过距离将不同的数据来归类。</p>
+<p>正因为聚类实现了对输入大量数据特征的分类，因此聚类也可以作为一种数据可视化方法，将看起来毫不相关的高维度数据按照其内在的联系展示出来，可以让人对复杂数据有更直观的理解。</p>
+<h2 id="数据挖掘的流程"><a href="#数据挖掘的流程" class="headerlink" title="数据挖掘的流程"></a>数据挖掘的流程</h2><p><strong>待续…</strong></p>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;h2 id=&quot;数据挖掘问题类别&quot;&gt;&lt;a href=&quot;#数据挖掘问题类别&quot; class=&quot;headerlink&quot; title=&quot;数据挖掘问题类别&quot;&gt;&lt;/a&gt;数据挖掘问题类别&lt;/h2&gt;&lt;p&gt;&lt;strong&gt;数据挖掘&lt;/strong&gt;简言之就是从数据中提取和发掘有价值的信息，具体问题有：回归、分类、聚类等，下面就尽量通俗的讲解来理解到底&lt;strong&gt;数据挖掘&lt;/strong&gt;做了什么。&lt;br&gt;
+    
+    </summary>
+    
+    
+      <category term="数据挖掘" scheme="http://votec.top/tags/%E6%95%B0%E6%8D%AE%E6%8C%96%E6%8E%98/"/>
+    
+      <category term="DataMining" scheme="http://votec.top/tags/DataMining/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>Python TkInter使用小结</title>
+    <link href="http://votec.top/2016/10/08/python-tkinter/"/>
+    <id>http://votec.top/2016/10/08/python-tkinter/</id>
+    <published>2016-10-07T16:02:00.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<p><a href="https://wiki.python.org/moin/TkInter" target="_blank" rel="external"><strong>TkInter</strong></a>是python下的一个标准GUI库，之前介绍过的<a href="http://votec.top/2016/09/29/python-graphics/">graphics库</a>就是基于TkInter编写的。</p>
+<h2 id="Demo小例子"><a href="#Demo小例子" class="headerlink" title="Demo小例子"></a>Demo小例子</h2><p>之前做了一些开发是关于TkInter的Text控件的，所以在这里总结一下Text相关的用法，废话不多说，我们直接来看一个TkInter程序小例子：</p>
+<a id="more"></a>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div><div class="line">9</div><div class="line">10</div><div class="line">11</div><div class="line">12</div><div class="line">13</div><div class="line">14</div><div class="line">15</div><div class="line">16</div><div class="line">17</div><div class="line">18</div><div class="line">19</div><div class="line">20</div><div class="line">21</div><div class="line">22</div><div class="line">23</div><div class="line">24</div><div class="line">25</div><div class="line">26</div><div class="line">27</div><div class="line">28</div><div class="line">29</div><div class="line">30</div><div class="line">31</div></pre></td><td class="code"><pre><div class="line"><span class="keyword">import</span> tkinter <span class="keyword">as</span> tk</div><div class="line"><span class="function"><span class="keyword">def</span> <span class="title">main</span><span class="params">()</span>:</span></div><div class="line">    root = tk.Tk()  <span class="comment"># TkInter主进程</span></div><div class="line">    text=tk.Text(root)  <span class="comment"># Text控件</span></div><div class="line">    text.tag_config(<span class="string">'r'</span>, foreground=<span class="string">'red'</span>)  <span class="comment"># 设定Text文字格式</span></div><div class="line">    text.tag_config(<span class="string">'b'</span>, foreground=<span class="string">'black'</span>)</div><div class="line">    text.insert(<span class="number">0.0</span>, <span class="string">'Hello '</span>, <span class="string">'r'</span>)  <span class="comment"># 插入Text文字</span></div><div class="line">    text.insert(tk.END,<span class="string">'World !\n'</span>,<span class="string">'b'</span>)</div><div class="line">    text.see(<span class="string">'0.0'</span>)</div><div class="line">    text.mark_set(<span class="string">'insert'</span>, <span class="string">'0.0'</span>)</div><div class="line">    text.pack(side=tk.LEFT, fill=tk.BOTH) <span class="comment"># 添加到pack布局</span></div><div class="line">    tt=text.get(<span class="string">"0.0"</span>, <span class="string">"end"</span>) <span class="comment"># 获取所有文本</span></div><div class="line">    scrl = tk.Scrollbar(root,orient=tk.VERTICAL) <span class="comment"># 滚动条Scrollbar控件</span></div><div class="line">    scrl.pack(side=tk.RIGHT, fill=tk.Y) <span class="comment">#添加到pack布局</span></div><div class="line">    text[<span class="string">'yscrollcommand'</span>] = scrl.set <span class="comment"># Text绑定Scrollbar</span></div><div class="line">    scrl[<span class="string">'command'</span>] = text.yview  <span class="comment"># Scrollbar绑定Text</span></div><div class="line">    <span class="function"><span class="keyword">def</span> <span class="title">addLine</span><span class="params">()</span>:</span></div><div class="line">        <span class="keyword">for</span> i <span class="keyword">in</span> range(int(var.get())):</div><div class="line">            text.insert(tk.CURRENT,<span class="string">'Hello World !\n'</span>,<span class="string">'b'</span>)</div><div class="line">    <span class="function"><span class="keyword">def</span> <span class="title">clear</span><span class="params">()</span>:</span></div><div class="line">        text.delete(<span class="number">0.0</span>, tk.END)  <span class="comment"># 清空Text</span></div><div class="line">    tk.Button(root, text=<span class="string">'clear'</span>, command = clear).pack(fill = tk.X) <span class="comment"># 添加按钮</span></div><div class="line">    tk.Button(root, text=<span class="string">'add'</span>, command = addLine).pack(fill = tk.X)</div><div class="line">    var = tk.StringVar() <span class="comment"># TkInter字符串</span></div><div class="line">    var.set(<span class="string">'8'</span>)</div><div class="line">    tk.Entry(root, textvariable = var).pack(fill = tk.X) <span class="comment"># 添加Entry</span></div><div class="line">    tk.Label(root, text = <span class="string">'lines'</span>).pack(fill = tk.X)  <span class="comment"># 添加Label</span></div><div class="line">    root.mainloop()</div><div class="line"></div><div class="line"><span class="keyword">if</span> __name__==<span class="string">"__main__"</span>:</div><div class="line">    main()</div></pre></td></tr></table></figure>
+<p>程序运行结果如下：</p>
+<p><img src="/images/python-tkinter-demo.png" alt="TkInter demo"></p>
+<h2 id="Text控件几点说明："><a href="#Text控件几点说明：" class="headerlink" title="Text控件几点说明："></a>Text控件几点说明：</h2><h3 id="光标位置"><a href="#光标位置" class="headerlink" title="光标位置"></a>光标位置</h3><p>光标位置是通过 <strong>‘x.y’</strong> 来确定的，其中 <strong>x</strong> 为行数，<strong>y</strong> 为列数，如 ‘0.0’ 就为文本的起始位置。另外 <strong>CURRENT</strong> 为当前光标的位置，<strong>END</strong> 为文本末尾的位置。</p>
+<h3 id="与Scollbar控件绑定"><a href="#与Scollbar控件绑定" class="headerlink" title="与Scollbar控件绑定"></a>与Scollbar控件绑定</h3><p>这两个控件要互相绑定才有作用，如下：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">text[<span class="string">'yscrollcommand'</span>] = scrl.set <span class="comment"># 让Text位置反馈给Scrollbar</span></div><div class="line">scrl[<span class="string">'command'</span>] = text.yview      <span class="comment"># 让Scrollbar操控Text</span></div></pre></td></tr></table></figure>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;&lt;a href=&quot;https://wiki.python.org/moin/TkInter&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;&lt;strong&gt;TkInter&lt;/strong&gt;&lt;/a&gt;是python下的一个标准GUI库，之前介绍过的&lt;a href=&quot;http://votec.top/2016/09/29/python-graphics/&quot;&gt;graphics库&lt;/a&gt;就是基于TkInter编写的。&lt;/p&gt;
+&lt;h2 id=&quot;Demo小例子&quot;&gt;&lt;a href=&quot;#Demo小例子&quot; class=&quot;headerlink&quot; title=&quot;Demo小例子&quot;&gt;&lt;/a&gt;Demo小例子&lt;/h2&gt;&lt;p&gt;之前做了一些开发是关于TkInter的Text控件的，所以在这里总结一下Text相关的用法，废话不多说，我们直接来看一个TkInter程序小例子：&lt;/p&gt;
+    
+    </summary>
+    
+    
+      <category term="Python" scheme="http://votec.top/tags/Python/"/>
+    
+      <category term="TkInter" scheme="http://votec.top/tags/TkInter/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>Python graphics使用小结</title>
+    <link href="http://votec.top/2016/09/29/python-graphics/"/>
+    <id>http://votec.top/2016/09/29/python-graphics/</id>
+    <published>2016-09-28T16:02:00.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<p><strong>graphics.py</strong>是John Zelle为”Python Programming: An Introduction to Computer Science”这本书编写的一个基于<a href="https://wiki.python.org/moin/TkInter" target="_blank" rel="external">TkInter</a>的简易Python图形库，非常简单易用，其<a href="http://anh.cs.luc.edu/python/hands-on/3.1/handsonHtml/graphics.html" target="_blank" rel="external">官方网站</a>。</p>
+<p>首先需要从<a href="http://mcsp.wartburg.edu/zelle/python/graphics.py" target="_blank" rel="external">这里</a>下载graphics.py文件，然后import该文件就可以使用了。可以参考<a href="http://mcsp.wartburg.edu/zelle/python/graphics/graphics.pdf" target="_blank" rel="external">官方参考文档Graphics Reference</a>。以下代码就是一个简单的graphics小程序：<br><a id="more"></a></p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div><div class="line">8</div></pre></td><td class="code"><pre><div class="line"><span class="keyword">from</span> graphics <span class="keyword">import</span> *</div><div class="line"><span class="function"><span class="keyword">def</span> <span class="title">main</span><span class="params">()</span>:</span></div><div class="line">    win = GraphWin(<span class="string">"My Circle"</span>, <span class="number">100</span>, <span class="number">100</span>)</div><div class="line">    c = Circle(Point(<span class="number">50</span>,<span class="number">50</span>), <span class="number">10</span>)</div><div class="line">    c.draw(win)</div><div class="line">    win.getMouse() <span class="comment"># pause for click in window</span></div><div class="line">    win.close()</div><div class="line">main()</div></pre></td></tr></table></figure>
+<p>该程序会生成一个名为”My Circle”的窗口，并且添加了一个圆形Circle对象。getMouse()为获取鼠标点击事件的方法，可以让我们停留看到生成的窗口的样子，如果没有这句窗口会一闪而过。</p>
+<h2 id="GraphWin对象"><a href="#GraphWin对象" class="headerlink" title="GraphWin对象"></a>GraphWin对象</h2><p>GraphWin对象为图形界面的主控窗口，各种图形控件都需要添加在这个窗口对象上。其构造函数为:</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">GraphWin(title, width, height)</div></pre></td></tr></table></figure>
+<h3 id="getMouse与checkMouse"><a href="#getMouse与checkMouse" class="headerlink" title="getMouse与checkMouse"></a>getMouse与checkMouse</h3><p>窗口的<strong>getMouse()</strong>方法与<strong>checkMouse()</strong>方法均为获取鼠标在窗口对象的点击事件，两者不同的是getMouse只有在获取到鼠标的点击事件后才会进行下一步操作，而checkMouse只是检查，不会等待事件发生。同理，<strong>getKey()</strong>和<strong>checkKey()</strong>作用于键盘事件。</p>
+<h2 id="Graphics对象"><a href="#Graphics对象" class="headerlink" title="Graphics对象"></a>Graphics对象</h2><p>Graphics对象包含了<strong>Point, Line, Circle, Oval, Rectangle, Polygon, Text</strong>这几种对象，下面介绍这几种通用的几个方法。</p>
+<h3 id="draw-aGraphWin"><a href="#draw-aGraphWin" class="headerlink" title="draw(aGraphWin)"></a>draw(aGraphWin)</h3><p>将控件添加到窗口的方法，<strong>aGraphWin</strong>为窗口对象名称。</p>
+<h3 id="move-dx-dy"><a href="#move-dx-dy" class="headerlink" title="move(dx,dy)"></a>move(dx,dy)</h3><p>将Graphics对象向<strong>(dx,dy)</strong>方向移动。</p>
+<h3 id="setFill-color"><a href="#setFill-color" class="headerlink" title="setFill(color)"></a>setFill(color)</h3><p>将对象填充为某一颜色，如：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">someObject.setFill(<span class="string">"red"</span>)</div></pre></td></tr></table></figure>
+<p>为填充为红色。其中<strong>color</strong>可以由RGB直接定义，需要调用<strong>color_rgb(red, green, blue)</strong>函数，如：</p>
+<figure class="highlight python"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">someObject.setFill(color_rgb(<span class="number">130</span>, <span class="number">0</span>, <span class="number">130</span>))</div></pre></td></tr></table></figure>
+<h3 id="Point对象"><a href="#Point对象" class="headerlink" title="Point对象"></a>Point对象</h3><p>点对象，构造函数为：<strong>Point(x,y)</strong></p>
+<p><strong>getX(), getY()</strong>：获得x,y坐标。</p>
+<h3 id="Line对象"><a href="#Line对象" class="headerlink" title="Line对象"></a>Line对象</h3><p>线段对象，构造函数为：<strong>Line(point1, point2)</strong></p>
+<p><strong>getCenter()</strong>：获得线段中点，返回Point对象</p>
+<p><strong>getP1(), getP2()</strong>：获得两个端点，返回Point对象</p>
+<h3 id="Circle对象"><a href="#Circle对象" class="headerlink" title="Circle对象"></a>Circle对象</h3><p>圆形对象，构造函数为：<strong>Circle(centerPoint, radius)</strong></p>
+<p><strong>getCenter()</strong>：获得圆心，返回Point对象</p>
+<p><strong>getRadius()</strong>：获得圆半径</p>
+<h3 id="Rectangle对象"><a href="#Rectangle对象" class="headerlink" title="Rectangle对象"></a>Rectangle对象</h3><p>矩形对象，构造函数为<strong>Rectangle(point1, point2)</strong></p>
+<p><strong>getCenter()</strong>：获得矩形中心点，返回Point对象</p>
+<h3 id="Text对象"><a href="#Text对象" class="headerlink" title="Text对象"></a>Text对象</h3><p>文本对象，构造函数为：<strong>Text(anchorPoint, textString)</strong></p>
+<p><strong>setText(string)</strong>：设定文本</p>
+<p><strong>getText()</strong>：获取文本</p>
+<h2 id="小结"><a href="#小结" class="headerlink" title="小结"></a>小结</h2><p><strong>graphics.py</strong>很简单呢，这里列了常用的一些对象，详细的还是翻文档吧：<a href="http://mcsp.wartburg.edu/zelle/python/graphics/graphics.pdf" target="_blank" rel="external">官方参考文档Graphics Reference</a></p>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;&lt;strong&gt;graphics.py&lt;/strong&gt;是John Zelle为”Python Programming: An Introduction to Computer Science”这本书编写的一个基于&lt;a href=&quot;https://wiki.python.org/moin/TkInter&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;TkInter&lt;/a&gt;的简易Python图形库，非常简单易用，其&lt;a href=&quot;http://anh.cs.luc.edu/python/hands-on/3.1/handsonHtml/graphics.html&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;官方网站&lt;/a&gt;。&lt;/p&gt;
+&lt;p&gt;首先需要从&lt;a href=&quot;http://mcsp.wartburg.edu/zelle/python/graphics.py&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;这里&lt;/a&gt;下载graphics.py文件，然后import该文件就可以使用了。可以参考&lt;a href=&quot;http://mcsp.wartburg.edu/zelle/python/graphics/graphics.pdf&quot; target=&quot;_blank&quot; rel=&quot;external&quot;&gt;官方参考文档Graphics Reference&lt;/a&gt;。以下代码就是一个简单的graphics小程序：&lt;br&gt;
+    
+    </summary>
+    
+    
+      <category term="Python" scheme="http://votec.top/tags/Python/"/>
+    
+      <category term="graphics" scheme="http://votec.top/tags/graphics/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>archlinux 更新日志</title>
+    <link href="http://votec.top/2012/06/27/archlinux-update/"/>
+    <id>http://votec.top/2012/06/27/archlinux-update/</id>
+    <published>2012-06-27T04:45:28.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<p><strong>时隔多年，翻出原来自己的archlinux安装日志，这应该是自己最早的技术博客了吧，居然还用的和markdown一样的格式，吼哈哈~ (2016-10-23)</strong></p>
+<p>这次更新比较好的是阴差阳错的声卡驱动好了很多,和windows下无异,但底噪仍很严重,硬件问题,暂且不管</p>
+<a id="more"></a>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">pacman -Sy pacman</div><div class="line">pacman -Syu</div></pre></td></tr></table></figure>
+<h2 id="安装fcitx-废弃scim-试了试ibus依旧不能用"><a href="#安装fcitx-废弃scim-试了试ibus依旧不能用" class="headerlink" title="安装fcitx,废弃scim,试了试ibus依旧不能用"></a>安装fcitx,废弃scim,试了试ibus依旧不能用</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div></pre></td><td class="code"><pre><div class="line">pacman -S fcitx fcitx-gtk2 fcitx-gtk3</div><div class="line">yaourt -S fcitx-cloudpinyin</div><div class="line">yaourt -S kcm-fcitx</div><div class="line">pacman -Rsn scim-pinyin scim-bridge scim</div></pre></td></tr></table></figure>
+<h3 id="编辑-xinitrc"><a href="#编辑-xinitrc" class="headerlink" title="编辑~/.xinitrc"></a>编辑~/.xinitrc</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div></pre></td><td class="code"><pre><div class="line"><span class="built_in">eval</span> `dbus-launch --sh-syntax --<span class="built_in">exit</span>-with-session`</div><div class="line"><span class="built_in">export</span> XMODIFIERS=@im=fcitx</div><div class="line"><span class="built_in">export</span> GTK_IM_MODULE=fcitx</div><div class="line"><span class="built_in">export</span> QT_IM_MODULE=fcitx</div></pre></td></tr></table></figure>
+<h3 id="编辑-xinitrc-1"><a href="#编辑-xinitrc-1" class="headerlink" title="编辑~/.xinitrc"></a>编辑~/.xinitrc</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div></pre></td><td class="code"><pre><div class="line"><span class="built_in">export</span> XMODIFIERS=@im=fcitx</div><div class="line"><span class="built_in">export</span> GTK_IM_MODULE=fcitx</div><div class="line"><span class="built_in">export</span> QT_IM_MODULE=fcitx</div></pre></td></tr></table></figure>
+<h2 id="安装okular-看课件-evince主题有问题"><a href="#安装okular-看课件-evince主题有问题" class="headerlink" title="安装okular,看课件,evince主题有问题"></a>安装okular,看课件,evince主题有问题</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">pacman -S kdegraphics-okular</div><div class="line">pacman -Rsn evince</div></pre></td></tr></table></figure>
+<h2 id="删除xmms"><a href="#删除xmms" class="headerlink" title="删除xmms"></a>删除xmms</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pacman -Rsn xmms</div></pre></td></tr></table></figure>
+<h2 id="playonlinux试玩-鉴定无聊-有空删"><a href="#playonlinux试玩-鉴定无聊-有空删" class="headerlink" title="playonlinux试玩,鉴定无聊,有空删"></a>playonlinux试玩,鉴定无聊,有空删</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">yaourt -S playonlinux</div></pre></td></tr></table></figure>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;&lt;strong&gt;时隔多年，翻出原来自己的archlinux安装日志，这应该是自己最早的技术博客了吧，居然还用的和markdown一样的格式，吼哈哈~ (2016-10-23)&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;这次更新比较好的是阴差阳错的声卡驱动好了很多,和windows下无异,但底噪仍很严重,硬件问题,暂且不管&lt;/p&gt;
+    
+    </summary>
+    
+    
+      <category term="archlinux" scheme="http://votec.top/tags/archlinux/"/>
+    
+      <category term="install" scheme="http://votec.top/tags/install/"/>
+    
+  </entry>
+  
+  <entry>
+    <title>archlinux2011.08.19安装日志</title>
+    <link href="http://votec.top/2012/01/10/archlinux2011-08-19-install/"/>
+    <id>http://votec.top/2012/01/10/archlinux2011-08-19-install/</id>
+    <published>2012-01-10T04:11:12.000Z</published>
+    <updated>2017-08-27T10:34:53.163Z</updated>
+    
+    <content type="html"><![CDATA[<p><strong>时隔多年，翻出原来自己的archlinux安装日志，这应该是自己最早的技术博客了吧，居然还用的和markdown一样的格式，吼哈哈~ (2016-10-23)</strong></p>
+<p>费了一整天安装好,虽然以前有装过,但2011.08.19有些小不同,写下日志以备后用,想尝试arch的同学可以参考,能力有限,多批评指正</p>
+<a id="more"></a>
+<h2 id="P-S"><a href="#P-S" class="headerlink" title="P.S."></a>P.S.</h2><ol>
+<li><p>此版本没有ifconfig命令,用ip addr查看网络,配置起来略费劲.</p>
+</li>
+<li><p>ibus1.4貌似有问题,无法选择输入法,官方解决方案ibus_googlepinyin和重新编译均不起作用,用scim取代.<a href="http://forum.ubuntu.org.cn/viewtopic.php?f=155&amp;t=346639" target="_blank" rel="external">见</a></p>
+</li>
+<li><p>由libqq-svn-195编译的pidgin qq试用体验一般,还是用web qq</p>
+</li>
+<li><p>此版本好像本身存在bug,pacman -Syu 报错,需先pacman -Sf filesystem后再Syu,<a href="https://www.archlinux.org/news/filesystem-upgrade-manual-intervention-required/" target="_blank" rel="external">官方说明见</a></p>
+</li>
+</ol>
+<h2 id="安装基本系统-arch-setup"><a href="#安装基本系统-arch-setup" class="headerlink" title="安装基本系统/arch/setup"></a>安装基本系统/arch/setup</h2><h3 id="编辑-etc-rc-conf"><a href="#编辑-etc-rc-conf" class="headerlink" title="编辑/etc/rc.conf"></a>编辑/etc/rc.conf</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div></pre></td><td class="code"><pre><div class="line">MODULES=(broadcoom)</div><div class="line">HOSTNAME=<span class="string">"FC"</span></div><div class="line">interface=eth0</div><div class="line">gateway=192.168.0.1</div></pre></td></tr></table></figure>
+<h3 id="编辑-etc-locale-gen"><a href="#编辑-etc-locale-gen" class="headerlink" title="编辑/etc/locale.gen"></a>编辑/etc/locale.gen</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div></pre></td><td class="code"><pre><div class="line">zh_CN.GB18030 GB18030</div><div class="line">zh_CN.GBK GBK</div><div class="line">zh_CN.UTF-8 UTF-8</div><div class="line">zh_CN GB2312</div></pre></td></tr></table></figure>
+<h2 id="配置pacman"><a href="#配置pacman" class="headerlink" title="配置pacman"></a>配置pacman</h2><h3 id="编辑-etc-pacman-d-mirrorlist"><a href="#编辑-etc-pacman-d-mirrorlist" class="headerlink" title="编辑/etc/pacman.d/mirrorlist"></a>编辑/etc/pacman.d/mirrorlist</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">Server = http://mirrors.163.com/archlinux/<span class="variable">$repo</span>/os/<span class="variable">$arch</span></div></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pacman -Syu</div></pre></td></tr></table></figure>
+<h2 id="添加用户-sudo"><a href="#添加用户-sudo" class="headerlink" title="添加用户 sudo"></a>添加用户 sudo</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div></pre></td><td class="code"><pre><div class="line">pacman -S sudo</div><div class="line">adduser <span class="built_in">fc</span></div><div class="line">visudo</div></pre></td></tr></table></figure>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line"><span class="built_in">fc</span> ALL=(ALL) ALL</div></pre></td></tr></table></figure>
+<h2 id="安装X"><a href="#安装X" class="headerlink" title="安装X"></a>安装X</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">pacman -S xorg-server xorg-utils xorg-server-utils xorg-xinit</div><div class="line">pacman -S nvidia nvidia-xconfig</div></pre></td></tr></table></figure>
+<h2 id="安装kde"><a href="#安装kde" class="headerlink" title="安装kde"></a>安装kde</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pacman -S kdebase phonon phonon-gstreamer kde-l10n-zh_cn kdeplasma-applets-networkmanagement kdemultimedia-kmix oxygen-gtk gtk-engine-murrine gtk-theme-switch2 wqy-zenhei networkmanager</div></pre></td></tr></table></figure>
+<h3 id="编辑-etc-rc-conf-1"><a href="#编辑-etc-rc-conf-1" class="headerlink" title="编辑/etc/rc.conf"></a>编辑/etc/rc.conf</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">DAEMONS=(hwclock syslog-ng dbus networkmanager !network netfs crond)</div></pre></td></tr></table></figure>
+<h3 id="编辑-etc-inittab"><a href="#编辑-etc-inittab" class="headerlink" title="编辑/etc/inittab"></a>编辑/etc/inittab</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div><div class="line">7</div></pre></td><td class="code"><pre><div class="line"><span class="comment"># 注释掉：</span></div><div class="line"><span class="comment"># id:3:initdefault:</span></div><div class="line"><span class="comment"># x:5:respawn:/usr/bin/xdm -nodaemon</span></div><div class="line"></div><div class="line"><span class="comment"># 然后取消注释：</span></div><div class="line">id:5:initdefault:</div><div class="line">x:5:respawn:/usr/bin/kdm -nodaemon</div></pre></td></tr></table></figure>
+<h3 id="重启进入kde"><a href="#重启进入kde" class="headerlink" title="重启进入kde"></a>重启进入kde</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">gtk-theme-switch2 <span class="comment">#修改主题</span></div></pre></td></tr></table></figure>
+<h3 id="电源cpu管理"><a href="#电源cpu管理" class="headerlink" title="电源cpu管理"></a>电源cpu管理</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pacman -S cpufrequtils acpi acpid</div></pre></td></tr></table></figure>
+<h3 id="编辑-etc-rc-conf-2"><a href="#编辑-etc-rc-conf-2" class="headerlink" title="编辑/etc/rc.conf"></a>编辑/etc/rc.conf</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">MODULES=(acpi-cpufreq cpufreq_ondemand broadcom)</div><div class="line">DAEMONS=(acpi hwclock syslog-ng dbus networkmanager !network netfs crond cpufreq)</div></pre></td></tr></table></figure>
+<h3 id="编辑-etc-rc-d-cpufreq"><a href="#编辑-etc-rc-d-cpufreq" class="headerlink" title="编辑/etc/rc.d/cpufreq"></a>编辑/etc/rc.d/cpufreq</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div></pre></td><td class="code"><pre><div class="line">governor=<span class="string">"ondemand"</span></div><div class="line">min_freq=<span class="string">"1.20GHz"</span></div><div class="line">max_freq=<span class="string">"2.27GHz"</span></div></pre></td></tr></table></figure>
+<h3 id="配置声卡"><a href="#配置声卡" class="headerlink" title="配置声卡"></a>配置声卡</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div></pre></td><td class="code"><pre><div class="line">pacman -S alsa alsa-utils alsa-oss</div><div class="line">alsamixer  <span class="comment"># M取消静音通道</span></div><div class="line">gpasswd -a <span class="built_in">fc</span> audio</div></pre></td></tr></table></figure>
+<h2 id="安装AUR"><a href="#安装AUR" class="headerlink" title="安装AUR"></a>安装AUR</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pacman -S base-devel</div></pre></td></tr></table></figure>
+<h2 id="安装yaourt"><a href="#安装yaourt" class="headerlink" title="安装yaourt"></a>安装yaourt</h2><h3 id="从AUR下载yaourt-tar-gz"><a href="#从AUR下载yaourt-tar-gz" class="headerlink" title="从AUR下载yaourt.tar.gz"></a>从AUR下载yaourt.tar.gz</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div></pre></td><td class="code"><pre><div class="line">tar zxvf yaourt.tar.gz</div><div class="line"><span class="built_in">cd</span> yaourt</div><div class="line">makepkg -s</div><div class="line">pacman -U yaourt-1.0.1-1-any.pkg.tar.xz</div><div class="line">yaourt -Sy</div></pre></td></tr></table></figure>
+<h3 id="安装scim-bridge"><a href="#安装scim-bridge" class="headerlink" title="安装scim-bridge"></a>安装scim-bridge</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">pacman -S scim scim-pinyin</div><div class="line">yaourt -S scim-bridge</div></pre></td></tr></table></figure>
+<h3 id="编辑-xinitrc"><a href="#编辑-xinitrc" class="headerlink" title="编辑~/.xinitrc"></a>编辑~/.xinitrc</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div></pre></td><td class="code"><pre><div class="line"><span class="built_in">export</span> LC_CTYPE=<span class="string">"zh_CN.UTF-8"</span></div><div class="line"><span class="built_in">export</span> XMODIFIERS=@im=SCIM</div><div class="line"><span class="built_in">export</span> GTK_IM_MODULE=<span class="string">"scim-bridge"</span></div><div class="line"><span class="built_in">export</span> QT_IM_MODULE=<span class="string">"scim-bridge"</span></div><div class="line">scim -d</div></pre></td></tr></table></figure>
+<h3 id="编辑-xprofile"><a href="#编辑-xprofile" class="headerlink" title="编辑~/.xprofile"></a>编辑~/.xprofile</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div></pre></td><td class="code"><pre><div class="line"><span class="built_in">export</span> LC_CTYPE=<span class="string">"zh_CN.UTF-8"</span></div><div class="line"><span class="built_in">export</span> XMODIFIERS=@im=SCIM</div><div class="line"><span class="built_in">export</span> GTK_IM_MODULE=<span class="string">"scim-bridge"</span></div><div class="line"><span class="built_in">export</span> QT_IM_MODULE=<span class="string">"scim-bridge"</span></div><div class="line">scim -d</div></pre></td></tr></table></figure>
+<h3 id="重启生效"><a href="#重启生效" class="headerlink" title="重启生效"></a>重启生效</h3><h2 id="挂载ntfs分区"><a href="#挂载ntfs分区" class="headerlink" title="挂载ntfs分区"></a>挂载ntfs分区</h2><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div></pre></td><td class="code"><pre><div class="line">pacman -S ntfs-3g</div><div class="line">mkdir /media/Win</div><div class="line">mkdir /media/Data</div></pre></td></tr></table></figure>
+<h3 id="编辑-etc-fstab"><a href="#编辑-etc-fstab" class="headerlink" title="编辑/etc/fstab"></a>编辑/etc/fstab</h3><figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line">/dev/sda2 /media/Win ntfs-3g users,uid=1000,gid=100,fmask=0113,dmask=0002 0 0</div><div class="line">/dev/sda5 /media/Data ntfs-3g users,uid=1000,gid=100,fmask=0113,dmask=0002 0 0</div></pre></td></tr></table></figure>
+<h2 id="安装其他程序"><a href="#安装其他程序" class="headerlink" title="安装其他程序"></a>安装其他程序</h2><ul>
+<li>gvim</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div></pre></td><td class="code"><pre><div class="line">pacman -S gvim</div></pre></td></tr></table></figure>
+<p>编辑/etc/vimrc</p>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div></pre></td><td class="code"><pre><div class="line"><span class="built_in">set</span> encoding=utf-8</div><div class="line"><span class="built_in">set</span> fileencodings=utf-8,gb2312,gb18030,gbk,ucs-bom,cp936,latin1</div></pre></td></tr></table></figure>
+<ul>
+<li>其余</li>
+</ul>
+<figure class="highlight bash"><table><tr><td class="gutter"><pre><div class="line">1</div><div class="line">2</div><div class="line">3</div><div class="line">4</div><div class="line">5</div><div class="line">6</div></pre></td><td class="code"><pre><div class="line">pacman -S libreoffice libreoffice-zh-CN</div><div class="line">yaourt -S google-chrome</div><div class="line">pacman -S flashplugin</div><div class="line">pacman -S smplayer</div><div class="line">pacman -S amarok gstramer-plugins</div><div class="line">pacman -S xmms gimp evince</div></pre></td></tr></table></figure>
+]]></content>
+    
+    <summary type="html">
+    
+      &lt;p&gt;&lt;strong&gt;时隔多年，翻出原来自己的archlinux安装日志，这应该是自己最早的技术博客了吧，居然还用的和markdown一样的格式，吼哈哈~ (2016-10-23)&lt;/strong&gt;&lt;/p&gt;
+&lt;p&gt;费了一整天安装好,虽然以前有装过,但2011.08.19有些小不同,写下日志以备后用,想尝试arch的同学可以参考,能力有限,多批评指正&lt;/p&gt;
+    
+    </summary>
+    
+    
+      <category term="archlinux" scheme="http://votec.top/tags/archlinux/"/>
+    
+      <category term="install" scheme="http://votec.top/tags/install/"/>
+    
+  </entry>
+  
+</feed>
